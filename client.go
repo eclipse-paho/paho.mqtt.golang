@@ -72,6 +72,10 @@ type Client interface {
 	// it will attempt to connect at v3.1.1 and auto retry at v3.1 if that
 	// fails
 	Connect() Token
+	// Reconnect will refresh a connection to the message broker
+	// trying to keep subscriptions active
+	// It allows to update client options
+	Reconnect(o *ClientOptions)
 	// Disconnect will end the connection with the server, but not before waiting
 	// the specified number of milliseconds to wait for existing work to be
 	// completed.
@@ -298,6 +302,21 @@ func (c *client) Connect() Token {
 		DEBUG.Println(CLI, "exit startClient")
 	}()
 	return t
+}
+
+// Reconnect will refresh a connection to the message broker
+// trying to keep subscriptions active (no tangible side effects)
+// It allows to update client options if needed
+// Note: client options update can be useful for enhanced security
+// flows such as credential rotation, refresh tokens, etc.
+func (c *client) Reconnect(options *ClientOptions) {
+	c.options = *options
+	c.reconnect(func(success bool) error {
+		if !success {
+			return fmt.Errorf("Reconnect failure")
+		}
+		return nil
+	})
 }
 
 // internal function used to reconnect the client when it loses its connection
