@@ -70,3 +70,17 @@ func (u *UnsubscribePacket) Unpack(b io.Reader) error {
 func (u *UnsubscribePacket) Details() Details {
 	return Details{Qos: 1, MessageID: u.MessageID}
 }
+
+// Copy creates a deep copy of the UnsubscribePacket
+func (u *UnsubscribePacket) Copy() ControlPacket {
+	cp := NewControlPacket(Unsubscribe).(*UnsubscribePacket)
+
+	*cp = *u
+
+	if len(u.Topics) > 0 {
+		cp.Topics = make([]string, len(u.Topics))
+		copy(cp.Topics, u.Topics)
+	}
+
+	return cp
+}

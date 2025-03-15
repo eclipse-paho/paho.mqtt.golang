@@ -55,7 +55,7 @@ func (p *PublishPacket) Write(w io.Writer) error {
 // Unpack decodes the details of a ControlPacket after the fixed
 // header has been read
 func (p *PublishPacket) Unpack(b io.Reader) error {
-	var payloadLength = p.FixedHeader.RemainingLength
+	payloadLength := p.FixedHeader.RemainingLength
 	var err error
 	p.TopicName, err = decodeString(b)
 	if err != nil {
@@ -80,20 +80,22 @@ func (p *PublishPacket) Unpack(b io.Reader) error {
 	return err
 }
 
-// Copy creates a new PublishPacket with the same topic and payload
-// but an empty fixed header, useful for when you want to deliver
-// a message with different properties such as Qos but the same
-// content
-func (p *PublishPacket) Copy() *PublishPacket {
-	newP := NewControlPacket(Publish).(*PublishPacket)
-	newP.TopicName = p.TopicName
-	newP.Payload = p.Payload
-
-	return newP
-}
-
 // Details returns a Details struct containing the Qos and
 // MessageID of this ControlPacket
 func (p *PublishPacket) Details() Details {
 	return Details{Qos: p.Qos, MessageID: p.MessageID}
+}
+
+// Copy creates a deep copy of the PublishPacket
+func (p *PublishPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Publish).(*PublishPacket)
+
+	*cp = *p
+
+	if len(p.Payload) > 0 {
+		cp.Payload = make([]byte, len(p.Payload))
+		copy(cp.Payload, p.Payload)
+	}
+
+	return cp
 }

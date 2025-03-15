@@ -48,3 +48,12 @@ func (d *DisconnectPacket) Unpack(b io.Reader) error {
 func (d *DisconnectPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
 }
+
+// Copy creates a deep copy of the DisconnectPacket
+func (d *DisconnectPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Disconnect).(*DisconnectPacket)
+
+	*cp = *d
+
+	return cp
+}
