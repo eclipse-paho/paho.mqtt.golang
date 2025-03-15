@@ -321,8 +321,8 @@ func isCopy(t *testing.T, original, copy any, fieldName ...string) {
 	}
 }
 
-// fillMapsOrSlice creates valid pointer for map, slices or normal pointer if they are nil.
-func fillMapsOrSlice(s any) {
+// createValidPointers creates valid pointer for map, slices or normal pointer if they are nil.
+func createValidPointers(s any) {
 	val := reflect.ValueOf(s).Elem()
 	for i := range val.NumField() {
 		field := val.Field(i)
@@ -340,7 +340,7 @@ func fillMapsOrSlice(s any) {
 				field.Set(reflect.MakeMap(field.Type()))
 			}
 		case reflect.Struct:
-			fillMapsOrSlice(field.Addr().Interface())
+			createValidPointers(field.Addr().Interface())
 		}
 	}
 }
@@ -364,7 +364,7 @@ func TestPacketCopy(t *testing.T) {
 	}
 
 	for _, packet := range packets {
-		fillMapsOrSlice(packet)
+		createValidPointers(packet)
 		copy := packet.Copy()
 
 		isCopy(t, packet, copy)
