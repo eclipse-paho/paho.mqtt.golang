@@ -255,8 +255,8 @@ func TestEncoding(t *testing.T) {
 }
 
 // isCopy checks if the original and copy are the same, recursively.
-// It will log the field name and values if they are different.
-// It will also log the field name and values if the pointer of the original and copy are the same.
+// It will fail the test if the values are different or if the pointer
+// of the original and copy are the same.
 func isCopy(t *testing.T, original, copy any, fieldName ...string) {
 	t.Helper()
 
