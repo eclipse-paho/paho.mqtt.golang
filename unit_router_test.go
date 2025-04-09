@@ -19,6 +19,7 @@
 package mqtt
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -353,4 +354,48 @@ func Test_SharedSubscription_MatchAndDispatch(t *testing.T) {
 		t.Errorf("matchAndDispatch should have exited")
 	}
 
+}
+
+func Benchmark_MatchAndDispatch(b *testing.B) {
+	calledback := make(chan bool, 1)
+
+	cb := func(c Client, m Message) {
+		calledback <- true
+	}
+
+	pub := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+	pub.TopicName = "a"
+	pub.Payload = []byte("foo")
+
+	msgs := make(chan *packets.PublishPacket, 1)
+
+	router := newRouter()
+	router.addRoute("a", cb)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	stopped := make(chan bool)
+	go func() {
+		wg.Done() // started
+		<-router.matchAndDispatch(msgs, true, &client{oboundP: make(chan *PacketAndToken, 100)})
+		stopped <- true
+	}()
+
+	wg.Wait()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		msgs <- pub
+		<-calledback
+	}
+
+	close(msgs)
+
+	select {
+	case <-stopped:
+		break
+	case <-time.After(time.Second):
+		b.Errorf("matchAndDispatch should have exited")
+	}
 }
