@@ -56,3 +56,12 @@ func (pc *PubcompPacket) Unpack(b io.Reader) error {
 func (pc *PubcompPacket) Details() Details {
 	return Details{Qos: pc.Qos, MessageID: pc.MessageID}
 }
+
+// Copy creates a deep copy of the PubcompPacket
+func (pc *PubcompPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Pubcomp).(*PubcompPacket)
+
+	*cp = *pc
+
+	return cp
+}
