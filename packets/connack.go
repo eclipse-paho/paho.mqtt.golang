@@ -66,3 +66,12 @@ func (ca *ConnackPacket) Unpack(b io.Reader) error {
 func (ca *ConnackPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
 }
+
+// Copy creates a deep copy of the ConnackPacket
+func (ca *ConnackPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Connack).(*ConnackPacket)
+
+	*cp = *ca
+
+	return cp
+}
