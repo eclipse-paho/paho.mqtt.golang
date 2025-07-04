@@ -143,6 +143,7 @@ type client struct {
 	commsStopped chan struct{}  // closed when the comms routines have stopped (kept running until after workers have closed to avoid deadlocks)
 
 	backoff *backoffController
+	logger  *clientLogger
 }
 
 // NewClient will create an MQTT v3.1.1 client with all of the options specified
@@ -165,6 +166,13 @@ func NewClient(o *ClientOptions) Client {
 		c.options.ProtocolVersion = 4
 		c.options.protocolVersionExplicit = false
 	}
+	c.logger = NewClientLogger(
+		c.options.ClientID,
+		c.options.ErrorLogger,
+		c.options.CriticalLogger,
+		c.options.WarnLogger,
+		c.options.DebugLogger,
+	)
 	c.persist = c.options.Store
 	c.messageIds = messageIds{index: make(map[uint16]tokenCompletor)}
 	c.msgRouter = newRouter()
