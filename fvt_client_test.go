@@ -248,7 +248,7 @@ func Test_Will(t *testing.T) {
 	sops := NewClientOptions().AddBroker(FVTTCP)
 	sops.SetClientID("will-giver")
 	sops.SetWill("/wills", "good-byte!", 0, false)
-	sops.SetConnectionLostHandler(func(client Client, err error) {
+	sops.SetConnectionLostHandler(func(client Client, err error, logger clientLogger) {
 		fmt.Println("OnConnectionLost!")
 	})
 	sops.SetAutoReconnect(false)
@@ -291,7 +291,7 @@ func Test_CleanSession(t *testing.T) {
 
 	sops := NewClientOptions().AddBroker(FVTTCP)
 	sops.SetClientID("clsn-sender")
-	sops.SetConnectionLostHandler(func(client Client, err error) {
+	sops.SetConnectionLostHandler(func(client Client, err error, logger clientLogger) {
 		fmt.Println("OnConnectionLost!")
 	})
 	sops.SetAutoReconnect(false)
@@ -368,7 +368,7 @@ func Test_Binary_Will(t *testing.T) {
 	sops := NewClientOptions().AddBroker(FVTTCP)
 	sops.SetClientID("will-giver")
 	sops.SetBinaryWill("/wills", will, 0, false)
-	sops.SetConnectionLostHandler(func(client Client, err error) {
+	sops.SetConnectionLostHandler(func(client Client, err error, logger clientLogger) {
 	})
 	sops.SetAutoReconnect(false)
 	c := NewClient(sops).(*client)
@@ -1090,7 +1090,7 @@ func Test_ping1_idle5(t *testing.T) {
 	ops := NewClientOptions()
 	ops.AddBroker(FVTTCP)
 	ops.SetClientID("p3i10")
-	ops.SetConnectionLostHandler(func(c Client, err error) {
+	ops.SetConnectionLostHandler(func(c Client, err error, logger clientLogger) {
 		t.Fatalf("Connection-lost handler was called: %s", err)
 	})
 	ops.SetKeepAlive(4 * time.Second)
@@ -1269,7 +1269,7 @@ func Test_ConnectRetryPublish(t *testing.T) {
 	}
 
 	// Connect for publish - initially use invalid server
-	memStore := NewMemoryStore()
+	memStore := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	memStore.Open()
 	pops := NewClientOptions().AddBroker("256.256.256.256").SetClientID("crp-pub").
 		SetStore(memStore).SetConnectRetry(true).SetConnectRetryInterval(time.Second / 2)
@@ -1301,7 +1301,7 @@ func Test_ConnectRetryPublish(t *testing.T) {
 
 	// disconnecting closes the store (both in disconnect and in Connect which runs as a goRoutine).
 	// As such we duplicate the store
-	memStore2 := NewMemoryStore()
+	memStore2 := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	memStore2.Open()
 	memStore2.Put(ids[0], packet)
 
@@ -1330,7 +1330,7 @@ func Test_ResumeSubs(t *testing.T) {
 	var qos byte = 1
 
 	// subscribe to topic before establishing a connection, and publish a message after the publish client has connected successfully
-	subMemStore := NewMemoryStore()
+	subMemStore := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	subMemStore.Open()
 	sops := NewClientOptions().AddBroker("256.256.256.256").SetClientID("resumesubs-sub").SetConnectRetry(true).
 		SetConnectRetryInterval(time.Second / 2).SetResumeSubs(true).SetStore(subMemStore)
@@ -1367,7 +1367,7 @@ func Test_ResumeSubs(t *testing.T) {
 	}
 
 	// test that the stored subscribe packet gets sent to the broker after connecting
-	subMemStore2 := NewMemoryStore()
+	subMemStore2 := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	subMemStore2.Open()
 	subMemStore2.Put(ids[0], packet)
 
@@ -1453,7 +1453,7 @@ func Test_ResumeSubsWithReconnect(t *testing.T) {
 		sub.MessageID = c.(*client).getID(subToken)
 		subToken.messageID = sub.MessageID
 	}
-	DEBUG.Println(CLI, sub.String())
+	c.(*client).logger.DEBUG.Println(CLI, sub.String())
 
 	persistOutbound(c.(*client).persist, sub)
 	// subToken := c.Subscribe(topic, qos, nil)
@@ -1501,7 +1501,7 @@ func Test_DisconnectWhileProcessingIncomingPublish(t *testing.T) {
 	sops.SetClientID("dwpip-sub")
 	// We need to know when the subscriber has lost its connection (this indicates that the deadlock has not occurred)
 	sDisconnected := make(chan struct{})
-	sops.SetConnectionLostHandler(func(Client, error) { close(sDisconnected) })
+	sops.SetConnectionLostHandler(func(Client, error, clientLogger) { close(sDisconnected) })
 
 	msgReceived := make(chan struct{})
 	var oneMsgReceived sync.Once
@@ -1618,7 +1618,7 @@ func Test_ResumeSubsMaxInflight(t *testing.T) {
 	}
 
 	// Now we preload an ordered memory store with 100 messages and connect...
-	memStore := NewOrderedMemoryStore()
+	memStore := NewOrderedMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	memStore.Open()
 
 	for i := 0; i < 1000; i++ {

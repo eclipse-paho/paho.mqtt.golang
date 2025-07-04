@@ -31,7 +31,7 @@ import (
 // connection passed in to avoid race condition on shutdown
 func keepalive(c *client, conn io.Writer) {
 	defer c.workers.Done()
-	DEBUG.Println(PNG, "keepalive starting")
+	c.logger.DEBUG.Println(PNG, "keepalive starting")
 	var checkInterval time.Duration
 	var pingSent time.Time
 
@@ -47,29 +47,29 @@ func keepalive(c *client, conn io.Writer) {
 	for {
 		select {
 		case <-c.stop:
-			DEBUG.Println(PNG, "keepalive stopped")
+			c.logger.DEBUG.Println(PNG, "keepalive stopped")
 			return
 		case <-intervalTicker.C:
 			lastSent := c.lastSent.Load().(time.Time)
 			lastReceived := c.lastReceived.Load().(time.Time)
 
-			DEBUG.Println(PNG, "ping check", time.Since(lastSent).Seconds())
+			c.logger.DEBUG.Println(PNG, "ping check", time.Since(lastSent).Seconds())
 			if time.Since(lastSent) >= time.Duration(c.options.KeepAlive*int64(time.Second)) || time.Since(lastReceived) >= time.Duration(c.options.KeepAlive*int64(time.Second)) {
 				if atomic.LoadInt32(&c.pingOutstanding) == 0 {
-					DEBUG.Println(PNG, "keepalive sending ping")
+					c.logger.DEBUG.Println(PNG, "keepalive sending ping")
 					ping := packets.NewControlPacket(packets.Pingreq).(*packets.PingreqPacket)
 					// We don't want to wait behind large messages being sent, the `Write` call
 					// will block until it is able to send the packet.
 					atomic.StoreInt32(&c.pingOutstanding, 1)
 					if err := ping.Write(conn); err != nil {
-						ERROR.Println(PNG, err)
+						c.logger.ERROR.Println(PNG, err)
 					}
 					c.lastSent.Store(time.Now())
 					pingSent = time.Now()
 				}
 			}
 			if atomic.LoadInt32(&c.pingOutstanding) > 0 && time.Since(pingSent) >= c.options.PingTimeout {
-				CRITICAL.Println(PNG, "pingresp not received, disconnecting")
+				c.logger.CRITICAL.Println(PNG, "pingresp not received, disconnecting")
 				c.internalConnLost(errors.New("pingresp not received, disconnecting")) // no harm in calling this if the connection is already down (or shutdown is in progress)
 				return
 			}

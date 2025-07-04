@@ -71,7 +71,7 @@ func (ts *TestStore) Reset() {
 
 func Test_NewFileStore(t *testing.T) {
 	storedir := "/tmp/TestStore/_new"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	if f.opened {
 		t.Fatalf("filestore was opened without opening it")
 	}
@@ -86,7 +86,7 @@ func Test_NewFileStore(t *testing.T) {
 func Test_FileStore_Open(t *testing.T) {
 	storedir := "/tmp/TestStore/_open"
 
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 	if !f.opened {
 		t.Fatalf("filestore was not set open")
@@ -101,7 +101,7 @@ func Test_FileStore_Open(t *testing.T) {
 
 func Test_FileStore_Close(t *testing.T) {
 	storedir := "/tmp/TestStore/_unopen"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 	if !f.opened {
 		t.Fatalf("filestore was not set open")
@@ -124,7 +124,7 @@ func Test_FileStore_Close(t *testing.T) {
 
 func Test_FileStore_write(t *testing.T) {
 	storedir := "/tmp/TestStore/_write"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
@@ -144,7 +144,7 @@ func Test_FileStore_write(t *testing.T) {
 
 func Test_FileStore_Get(t *testing.T) {
 	storedir := "/tmp/TestStore/_get"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	pm.Qos = 1
@@ -203,7 +203,7 @@ func Test_FileStore_Get(t *testing.T) {
 
 func Test_FileStore_Get_Corrupted(t *testing.T) {
 	storedir := "/tmp/TestStore/_get_error"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	pm.Qos = 1
@@ -260,7 +260,7 @@ func Test_FileStore_Get_Corrupted(t *testing.T) {
 
 func Test_FileStore_All(t *testing.T) {
 	storedir := "/tmp/TestStore/_all"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	pm.Qos = 2
@@ -284,7 +284,7 @@ func Test_FileStore_All(t *testing.T) {
 
 func Test_FileStore_Del(t *testing.T) {
 	storedir := "/tmp/TestStore/_del"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
@@ -309,7 +309,7 @@ func Test_FileStore_Del(t *testing.T) {
 
 func Test_FileStore_Reset(t *testing.T) {
 	storedir := "/tmp/TestStore/_reset"
-	f := NewFileStore(storedir)
+	f := NewFileStore(storedir, *NewClientLogger("test", nil, nil, nil, nil))
 	f.Open()
 
 	pm1 := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
@@ -400,14 +400,14 @@ func Test_FileStore_Reset(t *testing.T) {
  *******************/
 
 func Test_NewMemoryStore(t *testing.T) {
-	m := NewMemoryStore()
+	m := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	if m == nil {
 		t.Fatalf("MemoryStore could not be created")
 	}
 }
 
 func Test_MemoryStore_Open(t *testing.T) {
-	m := NewMemoryStore()
+	m := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	m.Open()
 	if !m.opened {
 		t.Fatalf("MemoryStore was not set open")
@@ -415,7 +415,7 @@ func Test_MemoryStore_Open(t *testing.T) {
 }
 
 func Test_MemoryStore_Close(t *testing.T) {
-	m := NewMemoryStore()
+	m := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	m.Open()
 	if !m.opened {
 		t.Fatalf("MemoryStore was not set open")
@@ -428,7 +428,7 @@ func Test_MemoryStore_Close(t *testing.T) {
 }
 
 func Test_MemoryStore_Reset(t *testing.T) {
-	m := NewMemoryStore()
+	m := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	m.Open()
 
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
@@ -452,7 +452,7 @@ func Test_MemoryStore_Reset(t *testing.T) {
 }
 
 func Test_MemoryStore_write(t *testing.T) {
-	m := NewMemoryStore()
+	m := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	m.Open()
 
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
@@ -469,7 +469,7 @@ func Test_MemoryStore_write(t *testing.T) {
 }
 
 func Test_MemoryStore_Get(t *testing.T) {
-	m := NewMemoryStore()
+	m := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	m.Open()
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	pm.Qos = 1
@@ -527,7 +527,7 @@ func Test_MemoryStore_Get(t *testing.T) {
 }
 
 func Test_MemoryStore_Del(t *testing.T) {
-	m := NewMemoryStore()
+	m := NewMemoryStore(*NewClientLogger("test", nil, nil, nil, nil))
 	m.Open()
 
 	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
