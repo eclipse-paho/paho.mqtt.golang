@@ -43,14 +43,16 @@ type FileStore struct {
 	sync.RWMutex
 	directory string
 	opened    bool
+	logger    clientLogger
 }
 
 // NewFileStore will create a new FileStore which stores its messages in the
 // directory provided.
-func NewFileStore(directory string) *FileStore {
+func NewFileStore(directory string, logger clientLogger) *FileStore {
 	store := &FileStore{
 		directory: directory,
 		opened:    false,
+		logger:    logger,
 	}
 	return store
 }
@@ -72,7 +74,7 @@ func (store *FileStore) Open() {
 		chkerr(merr)
 	}
 	store.opened = true
-	DEBUG.Println(STR, "store is opened at", store.directory)
+	store.logger.DEBUG.Println(STR, "store is opened at", store.directory)
 }
 
 // Close will disallow the FileStore from being used.
@@ -80,7 +82,7 @@ func (store *FileStore) Close() {
 	store.Lock()
 	defer store.Unlock()
 	store.opened = false
-	DEBUG.Println(STR, "store is closed")
+	store.logger.DEBUG.Println(STR, "store is closed")
 }
 
 // Put will put a message into the store, associated with the provided
@@ -89,13 +91,13 @@ func (store *FileStore) Put(key string, m packets.ControlPacket) {
 	store.Lock()
 	defer store.Unlock()
 	if !store.opened {
-		ERROR.Println(STR, "Trying to use file store, but not open")
+		store.logger.ERROR.Println(STR, "Trying to use file store, but not open")
 		return
 	}
 	full := fullpath(store.directory, key)
 	write(store.directory, key, m)
 	if !exists(full) {
-		ERROR.Println(STR, "file not created:", full)
+		store.logger.ERROR.Println(STR, "file not created:", full)
 	}
 }
 
@@ -105,7 +107,7 @@ func (store *FileStore) Get(key string) packets.ControlPacket {
 	store.RLock()
 	defer store.RUnlock()
 	if !store.opened {
-		ERROR.Println(STR, "trying to use file store, but not open")
+		store.logger.ERROR.Println(STR, "trying to use file store, but not open")
 		return nil
 	}
 	filepath := fullpath(store.directory, key)
@@ -120,9 +122,9 @@ func (store *FileStore) Get(key string) packets.ControlPacket {
 	// Message was unreadable, return nil
 	if rerr != nil {
 		newpath := corruptpath(store.directory, key)
-		WARN.Println(STR, "corrupted file detected:", rerr.Error(), "archived at:", newpath)
+		store.logger.WARN.Println(STR, "corrupted file detected:", rerr.Error(), "archived at:", newpath)
 		if err := os.Rename(filepath, newpath); err != nil {
-			ERROR.Println(STR, err)
+			store.logger.ERROR.Println(STR, err)
 		}
 		return nil
 	}
@@ -149,7 +151,7 @@ func (store *FileStore) Del(key string) {
 func (store *FileStore) Reset() {
 	store.Lock()
 	defer store.Unlock()
-	WARN.Println(STR, "FileStore Reset")
+	store.logger.WARN.Println(STR, "FileStore Reset")
 	for _, key := range store.all() {
 		store.del(key)
 	}
@@ -161,7 +163,7 @@ func (store *FileStore) all() []string {
 	var keys []string
 
 	if !store.opened {
-		ERROR.Println(STR, "trying to use file store, but not open")
+		store.logger.ERROR.Println(STR, "trying to use file store, but not open")
 		return nil
 	}
 
@@ -175,10 +177,10 @@ func (store *FileStore) all() []string {
 	}
 	sort.Sort(files)
 	for _, f := range files {
-		DEBUG.Println(STR, "file in All():", f.Name())
+		store.logger.DEBUG.Println(STR, "file in All():", f.Name())
 		name := f.Name()
 		if len(name) < len(msgExt) || name[len(name)-len(msgExt):] != msgExt {
-			DEBUG.Println(STR, "skipping file, doesn't have right extension: ", name)
+			store.logger.DEBUG.Println(STR, "skipping file, doesn't have right extension: ", name)
 			continue
 		}
 		key := name[0 : len(name)-4] // remove file extension
@@ -190,22 +192,22 @@ func (store *FileStore) all() []string {
 // lockless
 func (store *FileStore) del(key string) {
 	if !store.opened {
-		ERROR.Println(STR, "trying to use file store, but not open")
+		store.logger.ERROR.Println(STR, "trying to use file store, but not open")
 		return
 	}
-	DEBUG.Println(STR, "store del filepath:", store.directory)
-	DEBUG.Println(STR, "store delete key:", key)
+	store.logger.DEBUG.Println(STR, "store del filepath:", store.directory)
+	store.logger.DEBUG.Println(STR, "store delete key:", key)
 	filepath := fullpath(store.directory, key)
-	DEBUG.Println(STR, "path of deletion:", filepath)
+	store.logger.DEBUG.Println(STR, "path of deletion:", filepath)
 	if !exists(filepath) {
-		WARN.Println(STR, "store could not delete key:", key)
+		store.logger.WARN.Println(STR, "store could not delete key:", key)
 		return
 	}
 	rerr := os.Remove(filepath)
 	chkerr(rerr)
-	DEBUG.Println(STR, "del msg:", key)
+	store.logger.DEBUG.Println(STR, "del msg:", key)
 	if exists(filepath) {
-		ERROR.Println(STR, "file not deleted:", filepath)
+		store.logger.ERROR.Println(STR, "file not deleted:", filepath)
 	}
 }
 

@@ -43,7 +43,7 @@ type MessageHandler func(Client, Message)
 // executed upon an unintended disconnection from the MQTT broker.
 // Disconnects caused by calling Disconnect or ForceDisconnect will
 // not cause an OnConnectionLost callback to execute.
-type ConnectionLostHandler func(Client, error)
+type ConnectionLostHandler func(Client, error, clientLogger)
 
 // OnConnectHandler is a callback that is called when the client
 // state changes from unconnected/disconnected to connected. Both

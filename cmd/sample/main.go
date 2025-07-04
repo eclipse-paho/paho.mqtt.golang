@@ -21,6 +21,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
@@ -86,8 +87,14 @@ func main() {
 	opts.SetUsername(*user)
 	opts.SetPassword(*password)
 	opts.SetCleanSession(*cleansess)
+
+	debugLogger := log.New(os.Stdout, "[DEBUG] ", 0)
+	warnLogger := log.New(os.Stdout, "[WARN]  ", 0)
+	errorLogger := log.New(os.Stdout, "[ERROR] ", 0)
+	criticalLogger := log.New(os.Stdout, "[CRITICAL] ", 0)
+
 	if *store != ":memory:" {
-		opts.SetStore(MQTT.NewFileStore(*store))
+		opts.SetStore(MQTT.NewFileStore(*store, *MQTT.NewClientLogger(*id, debugLogger, warnLogger, errorLogger, criticalLogger)))
 	}
 
 	if *action == "pub" {
