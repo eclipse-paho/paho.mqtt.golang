@@ -67,7 +67,7 @@ func (store *FileStore) Open() {
 
 	// if store dir exists, great, otherwise, create it
 	if !exists(store.directory) {
-		perms := os.FileMode(0770)
+		perms := os.FileMode(0o770)
 		merr := os.MkdirAll(store.directory, perms)
 		chkerr(merr)
 	}
@@ -113,14 +113,16 @@ func (store *FileStore) Get(key string) packets.ControlPacket {
 		return nil
 	}
 	mfile, oerr := os.Open(filepath)
-	chkerr(oerr)
+	if oerr != nil {
+		ERROR.Println(STR, "file openning error:", oerr)
+	}
 	msg, rerr := packets.ReadPacket(mfile)
-	chkerr(mfile.Close())
+	mfile.Close()
 
 	// Message was unreadable, return nil
 	if rerr != nil {
 		newpath := corruptpath(store.directory, key)
-		WARN.Println(STR, "corrupted file detected:", rerr.Error(), "archived at:", newpath)
+		WARN.Println(STR, "corrupted file detected:", rerr.Error(), " archived at:", newpath)
 		if err := os.Rename(filepath, newpath); err != nil {
 			ERROR.Println(STR, err)
 		}
