@@ -42,3 +42,11 @@ var (
 	WARN     Logger = NOOPLogger{}
 	DEBUG    Logger = NOOPLogger{}
 )
+
+type LogLevel int
+
+const (
+	LogLevelDebug LogLevel = iota
+	LogLevelWarn
+	LogLevelError
+)

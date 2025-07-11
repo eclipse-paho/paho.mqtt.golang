@@ -21,6 +21,7 @@ package mqtt
 import (
 	"errors"
 	"io"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 func keepalive(c *client, conn io.Writer) {
 	defer c.workers.Done()
 	DEBUG.Println(PNG, "keepalive starting")
+	c.logger.Debug("keepalive starting", componentAttr(PNG))
 	var checkInterval time.Duration
 	var pingSent time.Time
 
@@ -48,21 +50,25 @@ func keepalive(c *client, conn io.Writer) {
 		select {
 		case <-c.stop:
 			DEBUG.Println(PNG, "keepalive stopped")
+			c.logger.Debug("keepalive stopped", componentAttr(PNG))
 			return
 		case <-intervalTicker.C:
 			lastSent := c.lastSent.Load().(time.Time)
 			lastReceived := c.lastReceived.Load().(time.Time)
 
 			DEBUG.Println(PNG, "ping check", time.Since(lastSent).Seconds())
+			c.logger.Debug("ping check", slog.Float64("secondsSinceLastSent", time.Since(lastSent).Seconds()))
 			if time.Since(lastSent) >= time.Duration(c.options.KeepAlive*int64(time.Second)) || time.Since(lastReceived) >= time.Duration(c.options.KeepAlive*int64(time.Second)) {
 				if atomic.LoadInt32(&c.pingOutstanding) == 0 {
 					DEBUG.Println(PNG, "keepalive sending ping")
+					c.logger.Debug("keepalive sending ping", componentAttr(PNG))
 					ping := packets.NewControlPacket(packets.Pingreq).(*packets.PingreqPacket)
 					// We don't want to wait behind large messages being sent, the `Write` call
 					// will block until it is able to send the packet.
 					atomic.StoreInt32(&c.pingOutstanding, 1)
 					if err := ping.Write(conn); err != nil {
 						ERROR.Println(PNG, err)
+						c.logger.Error(err.Error(), componentAttr(PNG))
 					}
 					c.lastSent.Store(time.Now())
 					pingSent = time.Now()
@@ -70,6 +76,7 @@ func keepalive(c *client, conn io.Writer) {
 			}
 			if atomic.LoadInt32(&c.pingOutstanding) > 0 && time.Since(pingSent) >= c.options.PingTimeout {
 				CRITICAL.Println(PNG, "pingresp not received, disconnecting")
+				c.logger.Error("pingresp not received, disconnecting", componentAttr(PNG))
 				c.internalConnLost(errors.New("pingresp not received, disconnecting")) // no harm in calling this if the connection is already down (or shutdown is in progress)
 				return
 			}

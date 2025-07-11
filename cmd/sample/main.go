@@ -86,6 +86,7 @@ func main() {
 	opts.SetUsername(*user)
 	opts.SetPassword(*password)
 	opts.SetCleanSession(*cleansess)
+
 	if *store != ":memory:" {
 		opts.SetStore(MQTT.NewFileStore(*store))
 	}
