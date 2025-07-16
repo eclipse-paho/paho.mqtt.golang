@@ -20,6 +20,7 @@ package mqtt
 
 import (
 	"io/fs"
+	"log/slog"
 	"os"
 	"path"
 	"sort"
@@ -43,6 +44,7 @@ type FileStore struct {
 	sync.RWMutex
 	directory string
 	opened    bool
+	logger    *slog.Logger
 }
 
 // NewFileStore will create a new FileStore which stores its messages in the
@@ -51,6 +53,21 @@ func NewFileStore(directory string) *FileStore {
 	store := &FileStore{
 		directory: directory,
 		opened:    false,
+		logger:    noopSLogger,
+	}
+	return store
+}
+
+// NewFileStoreEx will create a new FileStore which stores its messages in the
+// directory provided, using the provided logger.
+func NewFileStoreEx(directory string, logger *slog.Logger) *FileStore {
+	if logger == nil {
+		logger = noopSLogger
+	}
+	store := &FileStore{
+		directory: directory,
+		opened:    false,
+		logger:    logger,
 	}
 	return store
 }
@@ -73,6 +90,7 @@ func (store *FileStore) Open() {
 	}
 	store.opened = true
 	DEBUG.Println(STR, "store is opened at", store.directory)
+	store.logger.Debug("store is opened", slog.String("directory", store.directory), componentAttr(STR))
 }
 
 // Close will disallow the FileStore from being used.
@@ -81,6 +99,7 @@ func (store *FileStore) Close() {
 	defer store.Unlock()
 	store.opened = false
 	DEBUG.Println(STR, "store is closed")
+	store.logger.Debug("store is closed", componentAttr(STR))
 }
 
 // Put will put a message into the store, associated with the provided
@@ -90,12 +109,14 @@ func (store *FileStore) Put(key string, m packets.ControlPacket) {
 	defer store.Unlock()
 	if !store.opened {
 		ERROR.Println(STR, "Trying to use file store, but not open")
+		store.logger.Error("Trying to use file store, but not open", componentAttr(STR))
 		return
 	}
 	full := fullpath(store.directory, key)
 	write(store.directory, key, m)
 	if !exists(full) {
 		ERROR.Println(STR, "file not created:", full)
+		store.logger.Error("file not created", slog.String("path", full), componentAttr(STR))
 	}
 }
 
@@ -106,6 +127,7 @@ func (store *FileStore) Get(key string) packets.ControlPacket {
 	defer store.RUnlock()
 	if !store.opened {
 		ERROR.Println(STR, "trying to use file store, but not open")
+		store.logger.Error("trying to use file store, but not open", componentAttr(STR))
 		return nil
 	}
 	filepath := fullpath(store.directory, key)
@@ -121,8 +143,10 @@ func (store *FileStore) Get(key string) packets.ControlPacket {
 	if rerr != nil {
 		newpath := corruptpath(store.directory, key)
 		WARN.Println(STR, "corrupted file detected:", rerr.Error(), "archived at:", newpath)
+		store.logger.Warn("corrupted file detected", slog.String("error", rerr.Error()), slog.String("archived at", newpath), componentAttr(STR))
 		if err := os.Rename(filepath, newpath); err != nil {
 			ERROR.Println(STR, err)
+			store.logger.Error("failed to archive corrupted file", slog.String("error", err.Error()), componentAttr(STR))
 		}
 		return nil
 	}
@@ -150,6 +174,7 @@ func (store *FileStore) Reset() {
 	store.Lock()
 	defer store.Unlock()
 	WARN.Println(STR, "FileStore Reset")
+	store.logger.Warn("FileStore Reset", componentAttr(STR))
 	for _, key := range store.all() {
 		store.del(key)
 	}
@@ -162,6 +187,7 @@ func (store *FileStore) all() []string {
 
 	if !store.opened {
 		ERROR.Println(STR, "trying to use file store, but not open")
+		store.logger.Error("trying to use file store, but not open", componentAttr(STR))
 		return nil
 	}
 
@@ -176,9 +202,11 @@ func (store *FileStore) all() []string {
 	sort.Sort(files)
 	for _, f := range files {
 		DEBUG.Println(STR, "file in All():", f.Name())
+		store.logger.Debug("file in All()", slog.String("name", f.Name()), componentAttr(STR))
 		name := f.Name()
 		if len(name) < len(msgExt) || name[len(name)-len(msgExt):] != msgExt {
 			DEBUG.Println(STR, "skipping file, doesn't have right extension: ", name)
+			store.logger.Debug("skipping file, doesn't have right extension", slog.String("name", name), componentAttr(STR))
 			continue
 		}
 		key := name[0 : len(name)-4] // remove file extension
@@ -191,21 +219,28 @@ func (store *FileStore) all() []string {
 func (store *FileStore) del(key string) {
 	if !store.opened {
 		ERROR.Println(STR, "trying to use file store, but not open")
+		store.logger.Error("trying to use file store, but not open", componentAttr(STR))
 		return
 	}
 	DEBUG.Println(STR, "store del filepath:", store.directory)
+	store.logger.Debug("store del filepath", slog.String("directory", store.directory), componentAttr(STR))
 	DEBUG.Println(STR, "store delete key:", key)
+	store.logger.Debug("store delete key", slog.String("key", key), componentAttr(STR))
 	filepath := fullpath(store.directory, key)
 	DEBUG.Println(STR, "path of deletion:", filepath)
+	store.logger.Debug("path of deletion", slog.String("filepath", filepath), componentAttr(STR))
 	if !exists(filepath) {
 		WARN.Println(STR, "store could not delete key:", key)
+		store.logger.Warn("store could not delete key", slog.String("key", key), componentAttr(STR))
 		return
 	}
 	rerr := os.Remove(filepath)
 	chkerr(rerr)
 	DEBUG.Println(STR, "del msg:", key)
+	store.logger.Debug("del msg", slog.String("key", key), componentAttr(STR))
 	if exists(filepath) {
 		ERROR.Println(STR, "file not deleted:", filepath)
+		store.logger.Error("file not deleted", slog.String("filepath", filepath), componentAttr(STR))
 	}
 }
 

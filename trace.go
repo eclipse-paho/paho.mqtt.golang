@@ -18,6 +18,11 @@
 
 package mqtt
 
+import (
+	"io"
+	"log/slog"
+)
+
 type (
 	// Logger interface allows implementations to provide to this package any
 	// object that implements the methods defined in it.
@@ -41,4 +46,15 @@ var (
 	CRITICAL Logger = NOOPLogger{}
 	WARN     Logger = NOOPLogger{}
 	DEBUG    Logger = NOOPLogger{}
+)
+
+var noopSLogger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+
+type LogLevel int
+
+const (
+	LogLevelDefault LogLevel = iota // LogLevelDefault is the default log level that disables all log output
+	LogLevelDebug
+	LogLevelWarn
+	LogLevelError
 )

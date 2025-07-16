@@ -105,17 +105,19 @@ type ClientOptions struct {
 	Dialer                  *net.Dialer
 	CustomOpenConnectionFn  OpenConnectionFunc
 	AutoAckDisabled         bool
+	LogVerbosity            LogLevel
 }
 
 // NewClientOptions will create a new ClientClientOptions type with some
 // default values.
-//   Port: 1883
-//   CleanSession: True
-//   Order: True (note: it is recommended that this be set to FALSE unless order is important)
-//   KeepAlive: 30 (seconds)
-//   ConnectTimeout: 30 (seconds)
-//   MaxReconnectInterval 10 (minutes)
-//   AutoReconnect: True
+//
+//	Port: 1883
+//	CleanSession: True
+//	Order: True (note: it is recommended that this be set to FALSE unless order is important)
+//	KeepAlive: 30 (seconds)
+//	ConnectTimeout: 30 (seconds)
+//	MaxReconnectInterval 10 (minutes)
+//	AutoReconnect: True
 func NewClientOptions() *ClientOptions {
 	o := &ClientOptions{
 		Servers:                 nil,
@@ -149,6 +151,7 @@ func NewClientOptions() *ClientOptions {
 		Dialer:                  &net.Dialer{Timeout: 30 * time.Second},
 		CustomOpenConnectionFn:  nil,
 		AutoAckDisabled:         false,
+		LogVerbosity:            LogLevelDefault,
 	}
 	return o
 }
@@ -450,8 +453,15 @@ func (o *ClientOptions) SetCustomOpenConnectionFn(customOpenConnectionFn OpenCon
 }
 
 // SetAutoAckDisabled enables or disables the Automated Acking of Messages received by the handler.
+//
 //	By default it is set to false. Setting it to true will disable the auto-ack globally.
 func (o *ClientOptions) SetAutoAckDisabled(autoAckDisabled bool) *ClientOptions {
 	o.AutoAckDisabled = autoAckDisabled
+	return o
+}
+
+// SetLogLevel sets the log level for the client. This will be used to control the verbosity of the logs
+func (o *ClientOptions) SetLogLevel(logVerbosity LogLevel) *ClientOptions {
+	o.LogVerbosity = logVerbosity
 	return o
 }
