@@ -56,3 +56,12 @@ func (pr *PubrecPacket) Unpack(b io.Reader) error {
 func (pr *PubrecPacket) Details() Details {
 	return Details{Qos: pr.Qos, MessageID: pr.MessageID}
 }
+
+// Copy creates a deep copy of the PubrecPacket
+func (pr *PubrecPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Pubrec).(*PubrecPacket)
+
+	*cp = *pr
+
+	return cp
+}
