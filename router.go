@@ -48,7 +48,7 @@ func match(route []string, topic []string) bool {
 		return route[0] == "#"
 	}
 
-	if route[0] == "#" {
+	if route[0] == "#"  && !strings.HasPrefix(topic[0],"$")  {
 		return true
 	}
 
