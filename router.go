@@ -173,6 +173,7 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 	}
 
 	go func() { // Main go routine handling inbound messages
+		var handlers []MessageHandler
 		for message := range messages {
 			sent := false
 			r.RLock()
@@ -215,11 +216,14 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 				}
 			}
 			r.RUnlock()
-			for _, handler := range handlers {
-				handler(client, m)
-				if !client.options.AutoAckDisabled {
-					m.Ack()
+			if order {
+				for _, handler := range handlers {
+					handler(client, m)
+					if !client.options.AutoAckDisabled {
+						m.Ack()
+					}
 				}
+				handlers = handlers[:0]
 			}
 		}
 		if order {
