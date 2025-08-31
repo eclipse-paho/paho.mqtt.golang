@@ -160,12 +160,10 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 					for {
 						select {
 						case <-ackInChan: // drain ackInChan to ensure all goRoutines can complete cleanly (ACK dropped)
-							DEBUG.Println(ROU, "matchAndDispatch received acknowledgment after processing stopped (ACK dropped).")
-							r.logger.Debug("matchAndDispatch received acknowledgment after processing stopped (ACK dropped).", componentAttr(ROU))
+							r.logger.Debug("matchAndDispatch received acknowledgment after processing stopped (ACK dropped).", slog.String("component", string(ROU)))
 						case <-goRoutinesDone:
 							close(ackInChan) // Nothing further should be sent (a panic is probably better than silent failure)
-							DEBUG.Println(ROU, "matchAndDispatch order=false copy goroutine exiting.")
-							r.logger.Debug("matchAndDispatch order=false copy goroutine exiting.", componentAttr(ROU))
+							r.logger.Debug("matchAndDispatch order=false copy goroutine exiting.", slog.String("component", string(ROU)))
 							return
 						}
 					}
@@ -176,7 +174,6 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 
 	go func() { // Main go routine handling inbound messages
 		for message := range messages {
-			// DEBUG.Println(ROU, "matchAndDispatch received message")
 			sent := false
 			r.RLock()
 			m := messageFromPublish(message, ackFunc(ackInChan, client.persist, message, r.logger))
@@ -214,8 +211,7 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 						}()
 					}
 				} else {
-					DEBUG.Println(ROU, "matchAndDispatch received message and no handler was available. Message will NOT be acknowledged.")
-					r.logger.Debug("matchAndDispatch received message and no handler was available. Message will NOT be acknowledged.", componentAttr(ROU))
+					r.logger.Debug("matchAndDispatch received message and no handler was available. Message will NOT be acknowledged.", slog.String("component", string(ROU)))
 				}
 			}
 			r.RUnlock()
@@ -225,7 +221,6 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 					m.Ack()
 				}
 			}
-			// DEBUG.Println(ROU, "matchAndDispatch handled message")
 		}
 		if order {
 			close(ackOutChan)
@@ -238,8 +233,7 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 				close(goRoutinesDone)
 			}()
 		}
-		DEBUG.Println(ROU, "matchAndDispatch exiting")
-		r.logger.Debug("matchAndDispatch exiting", componentAttr(ROU))
+		r.logger.Debug("matchAndDispatch exiting", slog.String("component", string(ROU)))
 	}()
 	return ackOutChan
 }

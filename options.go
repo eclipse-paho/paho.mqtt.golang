@@ -23,6 +23,8 @@ package mqtt
 
 import (
 	"crypto/tls"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -105,7 +107,7 @@ type ClientOptions struct {
 	Dialer                  *net.Dialer
 	CustomOpenConnectionFn  OpenConnectionFunc
 	AutoAckDisabled         bool
-	LogVerbosity            LogLevel
+	Logger                  *slog.Logger
 }
 
 // NewClientOptions will create a new ClientClientOptions type with some
@@ -151,7 +153,9 @@ func NewClientOptions() *ClientOptions {
 		Dialer:                  &net.Dialer{Timeout: 30 * time.Second},
 		CustomOpenConnectionFn:  nil,
 		AutoAckDisabled:         false,
-		LogVerbosity:            LogLevelDefault,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})),
 	}
 	return o
 }
@@ -460,8 +464,10 @@ func (o *ClientOptions) SetAutoAckDisabled(autoAckDisabled bool) *ClientOptions 
 	return o
 }
 
-// SetLogLevel sets the log level for the client. This will be used to control the verbosity of the logs
-func (o *ClientOptions) SetLogLevel(logVerbosity LogLevel) *ClientOptions {
-	o.LogVerbosity = logVerbosity
+// SetLogger sets the logger instance used by the client.
+//
+// By default, no logger is configured.
+func (o *ClientOptions) SetLogger(logger *slog.Logger) *ClientOptions {
+	o.Logger = logger
 	return o
 }

@@ -19,6 +19,7 @@
 package mqtt
 
 import (
+	"context"
 	"io"
 	"log/slog"
 )
@@ -50,11 +51,70 @@ var (
 
 var noopSLogger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 
-type LogLevel int
+type logWriter struct {
+	l Logger
+}
 
-const (
-	LogLevelDefault LogLevel = iota // LogLevelDefault is the default log level that disables all log output
-	LogLevelDebug
-	LogLevelWarn
-	LogLevelError
-)
+func (w logWriter) Write(p []byte) (n int, err error) {
+	w.l.Printf("%s", string(p))
+	return len(p), nil
+}
+
+// LogWrapper implements slog.Handler to bridge slog logging to legacy Logger interfaces
+type LogWrapper struct {
+	handler  slog.Handler
+	ERROR    slog.Handler
+	CRITICAL slog.Handler
+	WARN     slog.Handler
+	DEBUG    slog.Handler
+}
+
+// NewLogWrapper creates a new LogWrapper that bridges slog to legacy loggers
+func NewLogWrapper(handler slog.Handler) *LogWrapper {
+	return &LogWrapper{
+		handler:  handler,
+		ERROR:    slog.NewTextHandler(logWriter{ERROR}, &slog.HandlerOptions{}),
+		CRITICAL: slog.NewTextHandler(logWriter{CRITICAL}, &slog.HandlerOptions{}),
+		WARN:     slog.NewTextHandler(logWriter{WARN}, &slog.HandlerOptions{}),
+		DEBUG:    slog.NewTextHandler(logWriter{DEBUG}, &slog.HandlerOptions{}),
+	}
+}
+
+func (w *LogWrapper) Enabled(ctx context.Context, level slog.Level) bool {
+	return w.handler.Enabled(ctx, level)
+}
+
+func (w *LogWrapper) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &LogWrapper{
+		handler:  w.handler.WithAttrs(attrs),
+		ERROR:    w.ERROR.WithAttrs(attrs),
+		CRITICAL: w.CRITICAL.WithAttrs(attrs),
+		WARN:     w.WARN.WithAttrs(attrs),
+		DEBUG:    w.DEBUG.WithAttrs(attrs),
+	}
+}
+
+func (w *LogWrapper) WithGroup(name string) slog.Handler {
+	return &LogWrapper{
+		handler:  w.handler.WithGroup(name),
+		ERROR:    w.ERROR.WithGroup(name),
+		CRITICAL: w.CRITICAL.WithGroup(name),
+		WARN:     w.WARN.WithGroup(name),
+		DEBUG:    w.DEBUG.WithGroup(name),
+	}
+}
+
+func (w *LogWrapper) Handle(ctx context.Context, record slog.Record) error {
+	switch {
+	case record.Level == slog.LevelError:
+		w.ERROR.Handle(ctx, record)
+	case record.Level == slog.LevelWarn:
+		w.CRITICAL.Handle(ctx, record)
+	case record.Level == slog.LevelInfo:
+		w.WARN.Handle(ctx, record)
+	case record.Level == slog.LevelDebug:
+		w.DEBUG.Handle(ctx, record)
+	}
+
+	return w.handler.Handle(ctx, record)
+}

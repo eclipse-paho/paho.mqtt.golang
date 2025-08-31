@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -165,13 +164,8 @@ func NewClient(o *ClientOptions) Client {
 		c.options.ProtocolVersion = 4
 		c.options.protocolVersionExplicit = false
 	}
-	if o.LogVerbosity == LogLevelDefault {
-		c.logger = noopSLogger
-	} else {
-		c.logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: o.LogVerbosity.toSlogLevel(),
-		})).With(slog.String("clientID", c.options.ClientID))
-	}
+	wrapper := NewLogWrapper(o.Logger.Handler())
+	c.logger = slog.New(wrapper)
 
 	if c.options.Store == nil {
 		c.options.Store = NewMemoryStore()
@@ -239,22 +233,19 @@ var ErrNotConnected = errors.New("not Connected")
 // because queued messages may be delivered immediately post connection
 func (c *client) Connect() Token {
 	t := newToken(packets.Connect).(*ConnectToken)
-	DEBUG.Println(CLI, "Connect()")
-	c.logger.Debug("Connect()", componentAttr(CLI))
+	c.logger.Debug("Connect()", slog.String("component", string(CLI)))
 
 	connectionUp, err := c.status.Connecting()
 	if err != nil {
 		if err == errAlreadyConnectedOrReconnecting && c.options.AutoReconnect {
 			// When reconnection is active we don't consider calls tro Connect to ba an error (mainly for compatability)
-			WARN.Println(CLI, "Connect() called but not disconnected")
-			c.logger.Warn("Connect() called but not disconnected", componentAttr(CLI))
+			c.logger.Info("Connect() called but not disconnected", slog.String("component", string(CLI)))
 
 			t.returnCode = packets.Accepted
 			t.flowComplete()
 			return t
 		}
-		ERROR.Println(CLI, err) // CONNECT should never be called unless we are disconnected
-		c.logger.Error("Connect() failed", slog.String("error", err.Error()), componentAttr(CLI))
+		c.logger.Error("Connect() failed", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 
 		t.setError(err)
 		return t
@@ -269,8 +260,7 @@ func (c *client) Connect() Token {
 		if len(c.options.Servers) == 0 {
 			t.setError(fmt.Errorf("no servers defined to connect to"))
 			if err := connectionUp(false); err != nil {
-				ERROR.Println(CLI, err.Error())
-				c.logger.Error(err.Error(), componentAttr(CLI))
+				c.logger.Error(err.Error(), slog.String("component", string(CLI)))
 			}
 			return
 		}
@@ -282,11 +272,10 @@ func (c *client) Connect() Token {
 		conn, rc, t.sessionPresent, err = c.attemptConnection()
 		if err != nil {
 			if c.options.ConnectRetry {
-				DEBUG.Println(CLI, "Connect failed, sleeping for", int(c.options.ConnectRetryInterval.Seconds()), "seconds and will then retry, error:", err.Error())
 				c.logger.Debug("Connect failed, sleeping for retry_interval and will then retry",
 					slog.Int("retry_interval_sec", int(c.options.ConnectRetryInterval.Seconds())),
 					slog.String("error", err.Error()),
-					componentAttr(CLI),
+					slog.String("component", string(CLI)),
 				)
 
 				time.Sleep(c.options.ConnectRetryInterval)
@@ -295,15 +284,13 @@ func (c *client) Connect() Token {
 					goto RETRYCONN
 				}
 			}
-			ERROR.Println(CLI, "Failed to connect to a broker")
-			c.logger.Error("Failed to connect to a broker", slog.String("error", err.Error()), componentAttr(CLI))
+			c.logger.Error("Failed to connect to a broker", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 
 			c.persist.Close()
 			t.returnCode = rc
 			t.setError(err)
 			if err := connectionUp(false); err != nil {
-				ERROR.Println(CLI, err.Error())
-				c.logger.Error("Connect() failed", slog.String("error", err.Error()), componentAttr(CLI))
+				c.logger.Error("Connect() failed", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 			}
 			return
 		}
@@ -316,14 +303,12 @@ func (c *client) Connect() Token {
 				c.persist.Reset()
 			}
 		} else { // Note: With the new status subsystem this should only happen if Disconnect called simultaneously with the above
-			WARN.Println(CLI, "Connect() called but connection established in another goroutine")
-			c.logger.Warn("Connect() called but connection established in another goroutine", componentAttr(CLI))
+			c.logger.Info("Connect() called but connection established in another goroutine", slog.String("component", string(CLI)))
 		}
 
 		close(inboundFromStore)
 		t.flowComplete()
-		DEBUG.Println(CLI, "exit startClient")
-		c.logger.Debug("exit startClient", componentAttr(CLI))
+		c.logger.Debug("exit startClient", slog.String("component", string(CLI)))
 	}()
 	return t
 }
@@ -331,8 +316,7 @@ func (c *client) Connect() Token {
 // internal function used to reconnect the client when it loses its connection
 // The connection status MUST be reconnecting prior to calling this function (via call to status.connectionLost)
 func (c *client) reconnect(connectionUp connCompletedFn) {
-	DEBUG.Println(CLI, "enter reconnect")
-	c.logger.Debug("enter reconnect", componentAttr(CLI))
+	c.logger.Debug("enter reconnect", slog.String("component", string(CLI)))
 
 	var (
 		initSleep = 1 * time.Second
@@ -342,8 +326,7 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 	// If the reason of connection lost is same as the before one, sleep timer is set before attempting connection is started.
 	// Sleep time is exponentially increased as the same situation continues
 	if slp, isContinual := c.backoff.sleepWithBackoff("connectionLost", initSleep, c.options.MaxReconnectInterval, 3*time.Second, true); isContinual {
-		DEBUG.Println(CLI, "Detect continual connection lost after reconnect, slept for", int(slp.Seconds()), "seconds")
-		c.logger.Debug("Detect continual connection lost after reconnect, slept for", slog.Int("seconds", int(slp.Seconds())), componentAttr(CLI))
+		c.logger.Debug("Detect continual connection lost after reconnect, slept for", slog.Int("seconds", int(slp.Seconds())), slog.String("component", string(CLI)))
 	}
 
 	for {
@@ -356,16 +339,13 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 			break
 		}
 		sleep, _ := c.backoff.sleepWithBackoff("attemptReconnection", initSleep, c.options.MaxReconnectInterval, c.options.ConnectTimeout, false)
-		DEBUG.Println(CLI, "Reconnect failed, slept for", int(sleep.Seconds()), "seconds:", err)
-		c.logger.Debug("Reconnect failed, slept for", slog.Int("seconds", int(sleep.Seconds())), slog.String("error", err.Error()), componentAttr(CLI))
+		c.logger.Debug("Reconnect failed, slept for", slog.Int("seconds", int(sleep.Seconds())), slog.String("error", err.Error()), slog.String("component", string(CLI)))
 
 		if c.status.ConnectionStatus() != reconnecting { // Disconnect may have been called
 			if err := connectionUp(false); err != nil { // Should always return an error
-				ERROR.Println(CLI, err.Error())
-				c.logger.Error(err.Error(), componentAttr(CLI))
+				c.logger.Error(err.Error(), slog.String("component", string(CLI)))
 			}
-			DEBUG.Println(CLI, "Client moved to disconnected state while reconnecting, abandoning reconnect")
-			c.logger.Debug("Client moved to disconnected state while reconnecting, abandoning reconnect", componentAttr(CLI))
+			c.logger.Debug("Client moved to disconnected state while reconnecting, abandoning reconnect", slog.String("component", string(CLI)))
 			return
 		}
 	}
@@ -399,21 +379,18 @@ func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
 	c.optionsMu.Unlock()
 	for _, broker := range brokers {
 		cm := newConnectMsgFromOptions(&c.options, broker)
-		DEBUG.Println(CLI, "about to write new connect msg")
-		c.logger.Debug("about to write new connect msg", componentAttr(CLI))
+		c.logger.Debug("about to write new connect msg", slog.String("component", string(CLI)))
 	CONN:
 		tlsCfg := c.options.TLSConfig
 		if c.options.OnConnectAttempt != nil {
-			DEBUG.Println(CLI, "using custom onConnectAttempt handler...")
-			c.logger.Debug("using custom onConnectAttempt handler", componentAttr(CLI))
+			c.logger.Debug("using custom onConnectAttempt handler", slog.String("component", string(CLI)))
 
 			tlsCfg = c.options.OnConnectAttempt(broker, c.options.TLSConfig)
 		}
 		connDeadline := time.Now().Add(c.options.ConnectTimeout) // Time by which connection must be established
 		dialer := c.options.Dialer
 		if dialer == nil { //
-			WARN.Println(CLI, "dialer was nil, using default")
-			c.logger.Warn("dialer was nil, using default", componentAttr(CLI))
+			c.logger.Info("dialer was nil, using default", slog.String("component", string(CLI)))
 			dialer = &net.Dialer{Timeout: 30 * time.Second}
 		}
 		// Start by opening the network connection (tcp, tls, ws) etc
@@ -423,29 +400,23 @@ func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
 			conn, err = openConnection(broker, tlsCfg, c.options.ConnectTimeout, c.options.HTTPHeaders, c.options.WebsocketOptions, dialer)
 		}
 		if err != nil {
-			ERROR.Println(CLI, err.Error())
-			c.logger.Error("Failed to connect to broker", slog.String("error", err.Error()), componentAttr(CLI))
-			WARN.Println(CLI, "failed to connect to broker, trying next")
-			c.logger.Warn("failed to connect to broker, trying next", componentAttr(CLI))
+			c.logger.Error("Failed to connect to broker", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 
 			rc = packets.ErrNetworkError
 			continue
 		}
-		DEBUG.Println(CLI, "socket connected to broker")
-		c.logger.Debug("socket connected to broker", componentAttr(CLI))
+		c.logger.Debug("socket connected to broker", slog.String("component", string(CLI)))
 
 		// Now we perform the MQTT connection handshake ensuring that it does not exceed the timeout
 		if err := conn.SetDeadline(connDeadline); err != nil {
-			ERROR.Println(CLI, "set deadline for handshake ", err)
-			c.logger.Error("set deadline for handshake", slog.String("error", err.Error()), componentAttr(CLI))
+			c.logger.Error("set deadline for handshake", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 		}
 
 		// Now we perform the MQTT connection handshake
 		rc, sessionPresent, err = connectMQTT(conn, cm, protocolVersion, c.logger)
 		if rc == packets.Accepted {
 			if err := conn.SetDeadline(time.Time{}); err != nil {
-				ERROR.Println(CLI, "reset deadline following handshake ", err)
-				c.logger.Error("reset deadline following handshake", slog.String("error", err.Error()), componentAttr(CLI))
+				c.logger.Error("reset deadline following handshake", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 			}
 			break // successfully connected
 		}
@@ -454,18 +425,16 @@ func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
 		_ = conn.Close()
 
 		if !c.options.protocolVersionExplicit && protocolVersion == 4 { // try falling back to 3.1?
-			DEBUG.Println(CLI, "Trying reconnect using MQTT 3.1 protocol")
-			c.logger.Debug("Trying reconnect using MQTT 3.1 protocol", componentAttr(CLI))
+			c.logger.Debug("Trying reconnect using MQTT 3.1 protocol", slog.String("component", string(CLI)))
 
 			protocolVersion = 3
 			goto CONN
 		}
 		if c.options.protocolVersionExplicit { // to maintain logging from previous version
-			ERROR.Println(CLI, "Connecting to", broker, "CONNACK was not CONN_ACCEPTED, but rather", packets.ConnackReturnCodes[rc])
 			c.logger.Error("CONNACK was not CONN_ACCEPTED, but rather",
 				slog.String("CONNACK", packets.ConnackReturnCodes[rc]),
 				slog.String("broker", broker.String()),
-				componentAttr(CLI),
+				slog.String("component", string(CLI)),
 			)
 		}
 	}
@@ -497,35 +466,30 @@ func (c *client) Disconnect(quiesce uint) {
 		disDone, err := c.status.Disconnecting()
 		if err != nil {
 			// Status has been set to disconnecting, but we had to wait for something else to complete
-			WARN.Println(CLI, err.Error())
-			c.logger.Warn("Disconnect() called but waiting for something else to complete", slog.String("error", err.Error()), componentAttr(CLI))
+			c.logger.Info("Disconnect() called but waiting for something else to complete", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 			return
 		}
 		defer func() {
 			c.disconnect() // Force disconnection
 			disDone()      // Update status
 		}()
-		DEBUG.Println(CLI, "disconnecting")
-		c.logger.Debug("disconnecting", componentAttr(CLI))
+		c.logger.Debug("disconnecting", slog.String("component", string(CLI)))
 
 		dm := packets.NewControlPacket(packets.Disconnect).(*packets.DisconnectPacket)
 		dt := newToken(packets.Disconnect)
 		select {
 		case c.oboundP <- &PacketAndToken{p: dm, t: dt}:
 			// wait for work to finish, or quiesce time consumed
-			DEBUG.Println(CLI, "calling WaitTimeout")
-			c.logger.Debug("calling WaitTimeout", componentAttr(CLI))
+			c.logger.Debug("calling WaitTimeout", slog.String("component", string(CLI)))
 
 			dt.WaitTimeout(time.Duration(quiesce) * time.Millisecond)
-			DEBUG.Println(CLI, "WaitTimeout done")
-			c.logger.Debug("WaitTimeout done", componentAttr(CLI))
+			c.logger.Debug("WaitTimeout done", slog.String("component", string(CLI)))
 		// Below code causes a potential data race. Following status refactor it should no longer be required
 		// but leaving in as need to check code further.
 		// case <-c.commsStopped:
 		//           WARN.Println("Disconnect packet could not be sent because comms stopped")
 		case <-time.After(time.Duration(quiesce) * time.Millisecond):
-			WARN.Println("Disconnect packet not sent due to timeout")
-			c.logger.Warn("Disconnect packet not sent due to timeout", componentAttr(CLI))
+			c.logger.Info("Disconnect packet not sent due to timeout", slog.String("component", string(CLI)))
 		}
 	}()
 
@@ -545,12 +509,10 @@ func (c *client) forceDisconnect() {
 	disDone, err := c.status.Disconnecting()
 	if err != nil {
 		// Possible that we are not actually connected
-		WARN.Println(CLI, err.Error())
-		c.logger.Warn("error when forcing disconnect", slog.String("error", err.Error()), componentAttr(CLI))
+		c.logger.Info("error when forcing disconnect", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 		return
 	}
-	DEBUG.Println(CLI, "forcefully disconnecting")
-	c.logger.Debug("forcefully disconnecting", componentAttr(CLI))
+	c.logger.Debug("forcefully disconnecting", slog.String("component", string(CLI)))
 	c.disconnect()
 	disDone()
 }
@@ -560,11 +522,9 @@ func (c *client) disconnect() {
 	done := c.stopCommsWorkers()
 	if done != nil {
 		<-done // Wait until the disconnect is complete (to limit chance that another connection will be started)
-		DEBUG.Println(CLI, "forcefully disconnecting")
-		c.logger.Debug("forcefully disconnecting", componentAttr(CLI))
+		c.logger.Debug("forcefully disconnecting", slog.String("component", string(CLI)))
 		c.messageIds.cleanUp()
-		DEBUG.Println(CLI, "disconnected")
-		c.logger.Debug("disconnected", componentAttr(CLI))
+		c.logger.Debug("disconnected", slog.String("component", string(CLI)))
 		c.persist.Close()
 	}
 }
@@ -575,15 +535,13 @@ func (c *client) internalConnLost(whyConnLost error) {
 	// It is possible that internalConnLost will be called multiple times simultaneously
 	// (including after sending a DisconnectPacket) as such we only do cleanup etc if the
 	// routines were actually running and are not being disconnected at users request
-	DEBUG.Println(CLI, "internalConnLost called")
-	c.logger.Debug("internalConnLost called", componentAttr(CLI))
+	c.logger.Debug("internalConnLost called", slog.String("component", string(CLI)))
 	disDone, err := c.status.ConnectionLost(c.options.AutoReconnect && c.status.ConnectionStatus() > connecting)
 	if err != nil {
 		if err == errConnLossWhileDisconnecting || err == errAlreadyHandlingConnectionLoss {
 			return // Loss of connection is expected or already being handled
 		}
-		ERROR.Println(CLI, fmt.Sprintf("internalConnLost unexpected status: %s", err.Error()))
-		c.logger.Error("internalConnLost unexpected status", slog.String("error", err.Error()), componentAttr(CLI))
+		c.logger.Error("internalConnLost unexpected status", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 		return
 	}
 
@@ -594,31 +552,25 @@ func (c *client) internalConnLost(whyConnLost error) {
 	// issues with status handling). This code has been left in place for the time being just in case the new
 	// status handling contains bugs (refactoring required at some point).
 	if stopDone == nil { // stopDone will be nil if workers already in the process of stopping or stopped
-		ERROR.Println(CLI, "internalConnLost stopDone unexpectedly nil - BUG BUG")
-		c.logger.Error("internalConnLost stopDone unexpectedly nil - BUG BUG", componentAttr(CLI))
+		c.logger.Error("internalConnLost stopDone unexpectedly nil - BUG BUG", slog.String("component", string(CLI)))
 		// Cannot really do anything other than leave things disconnected
 		if _, err = disDone(false); err != nil { // Safest option - cannot leave status as connectionLost
-			ERROR.Println(CLI, fmt.Sprintf("internalConnLost failed to set status to disconnected (stopDone): %s", err.Error()))
-			c.logger.Error("internalConnLost failed to set status to disconnected (stopDone)", slog.String("error", err.Error()), componentAttr(CLI))
+			c.logger.Error("internalConnLost failed to set status to disconnected (stopDone)", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 		}
 		return
 	}
 
 	// It may take a while for the disconnection to complete whatever called us needs to exit cleanly so finnish in goRoutine
 	go func() {
-		DEBUG.Println(CLI, "internalConnLost waiting on workers")
-		c.logger.Debug("internalConnLost waiting on workers", componentAttr(CLI))
+		c.logger.Debug("internalConnLost waiting on workers", slog.String("component", string(CLI)))
 		<-stopDone
-		DEBUG.Println(CLI, "internalConnLost workers stopped")
-		c.logger.Debug("internalConnLost workers stopped", componentAttr(CLI))
+		c.logger.Debug("internalConnLost workers stopped", slog.String("component", string(CLI)))
 
 		reConnDone, err := disDone(true)
 		if err != nil {
-			ERROR.Println(CLI, "failure whilst reporting completion of disconnect", err)
-			c.logger.Error("failure whilst reporting completion of disconnect", slog.Any("error", err), componentAttr(CLI))
+			c.logger.Error("failure whilst reporting completion of disconnect", slog.Any("error", err), slog.String("component", string(CLI)))
 		} else if reConnDone == nil { // Should never happen
-			ERROR.Println(CLI, "BUG BUG BUG reconnection function is nil", err)
-			c.logger.Error("BUG BUG BUG reconnection function is nil", slog.Any("error", err), componentAttr(CLI))
+			c.logger.Error("BUG BUG BUG reconnection function is nil", slog.Any("error", err), slog.String("component", string(CLI)))
 		}
 
 		reconnect := err == nil && reConnDone != nil
@@ -634,8 +586,7 @@ func (c *client) internalConnLost(whyConnLost error) {
 		if c.options.OnConnectionLost != nil {
 			go c.options.OnConnectionLost(c, whyConnLost)
 		}
-		DEBUG.Println(CLI, "internalConnLost complete")
-		c.logger.Debug("internalConnLost complete", componentAttr(CLI))
+		c.logger.Debug("internalConnLost complete", slog.String("component", string(CLI)))
 	}()
 }
 
@@ -644,17 +595,14 @@ func (c *client) internalConnLost(whyConnLost error) {
 // Returns true if the comms workers were started (i.e. successful connection)
 // connectionUp(true) will be called once everything is up;  connectionUp(false) will be called on failure
 func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, inboundFromStore <-chan packets.ControlPacket) bool {
-	DEBUG.Println(CLI, "startCommsWorkers called")
-	c.logger.Debug("startCommsWorkers called", componentAttr(CLI))
+	c.logger.Debug("startCommsWorkers called", slog.String("component", string(CLI)))
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 	if c.conn != nil { // Should never happen due to new status handling; leaving in for safety for the time being
-		WARN.Println(CLI, "startCommsWorkers called when commsworkers already running BUG BUG")
-		c.logger.Warn("startCommsWorkers called when commsworkers already running BUG BUG", componentAttr(CLI))
+		c.logger.Info("startCommsWorkers called when commsworkers already running BUG BUG", slog.String("component", string(CLI)))
 		_ = conn.Close() // No use for the new network connection
 		if err := connectionUp(false); err != nil {
-			ERROR.Println(CLI, err.Error())
-			c.logger.Error("startCommsWorkers failed", slog.String("error", err.Error()), componentAttr(CLI))
+			c.logger.Error("startCommsWorkers failed", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 		}
 		return false
 	}
@@ -680,12 +628,10 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 	// issue 675：we will allow the connection to complete before the Disconnect is allowed to proceed
 	//   as if a Disconnect event occurred immediately after connectionUp(true) completed.
 	if err := connectionUp(true); err != nil {
-		ERROR.Println(CLI, err)
-		c.logger.Error(err.Error(), componentAttr(CLI))
+		c.logger.Error(err.Error(), slog.String("component", string(CLI)))
 	}
 
-	DEBUG.Println(CLI, "client is connected/reconnected")
-	c.logger.Debug("client is connected/reconnected", componentAttr(CLI))
+	c.logger.Debug("client is connected/reconnected", slog.String("component", string(CLI)))
 	if c.options.OnConnect != nil {
 		go c.options.OnConnect(c)
 	}
@@ -722,8 +668,7 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 				}
 				close(commsoboundP) // Nothing sending to these channels anymore so close them and allow comms routines to exit
 				close(commsobound)
-				DEBUG.Println(CLI, "startCommsWorkers output redirector finished")
-				c.logger.Debug("startCommsWorkers output redirector finished", componentAttr(CLI))
+				c.logger.Debug("startCommsWorkers output redirector finished", slog.String("component", string(CLI)))
 				return
 			}
 		}
@@ -755,8 +700,7 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 							commsErrors = nil
 							continue
 						}
-						ERROR.Println(CLI, "Connect comms goroutine - error triggered during send Pub", err)
-						c.logger.Error("Connect comms goroutine - error triggered during send Pub", slog.String("error", err.Error()), componentAttr(CLI))
+						c.logger.Error("Connect comms goroutine - error triggered during send Pub", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 						c.internalConnLost(err) // no harm in calling this if the connection is already down (or shutdown is in progress)
 						continue
 					}
@@ -766,18 +710,15 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 					commsErrors = nil
 					continue
 				}
-				ERROR.Println(CLI, "Connect comms goroutine - error triggered", err)
-				c.logger.Error("Connect comms goroutine - error triggered", err.Error(), componentAttr(CLI))
+				c.logger.Error("Connect comms goroutine - error triggered", err.Error(), slog.String("component", string(CLI)))
 				c.internalConnLost(err) // no harm in calling this if the connection is already down (or shutdown is in progress)
 				continue
 			}
 		}
-		DEBUG.Println(CLI, "incoming comms goroutine done")
-		c.logger.Debug("incoming comms goroutine done", componentAttr(CLI))
+		c.logger.Debug("incoming comms goroutine done", slog.String("component", string(CLI)))
 		close(c.commsStopped)
 	}()
-	DEBUG.Println(CLI, "startCommsWorkers done")
-	c.logger.Debug("startCommsWorkers done", componentAttr(CLI))
+	c.logger.Debug("startCommsWorkers done", slog.String("component", string(CLI)))
 	return true
 }
 
@@ -786,13 +727,11 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 // Note: This may block so run as a go routine if calling from any of the comms routines
 // Note2: It should be possible to simplify this now that the new status management code is in place.
 func (c *client) stopCommsWorkers() chan struct{} {
-	DEBUG.Println(CLI, "stopCommsWorkers called")
-	c.logger.Debug("stopCommsWorkers called", componentAttr(CLI))
+	c.logger.Debug("stopCommsWorkers called", slog.String("component", string(CLI)))
 	// It is possible that this function will be called multiple times simultaneously due to the way things get shutdown
 	c.connMu.Lock()
 	if c.conn == nil {
-		DEBUG.Println(CLI, "stopCommsWorkers done (not running)")
-		c.logger.Debug("stopCommsWorkers done (not running)", componentAttr(CLI))
+		c.logger.Debug("stopCommsWorkers done (not running)", slog.String("component", string(CLI)))
 		c.connMu.Unlock()
 		return nil
 	}
@@ -812,17 +751,14 @@ func (c *client) stopCommsWorkers() chan struct{} {
 	doneChan := make(chan struct{})
 
 	go func() {
-		DEBUG.Println(CLI, "stopCommsWorkers waiting for workers")
-		c.logger.Debug("stopCommsWorkers waiting for workers", componentAttr(CLI))
+		c.logger.Debug("stopCommsWorkers waiting for workers", slog.String("component", string(CLI)))
 		c.workers.Wait()
 
 		// Stopping the workers will allow the comms routines to exit; we wait for these to complete
-		DEBUG.Println(CLI, "stopCommsWorkers waiting for comms")
-		c.logger.Debug("stopCommsWorkers waiting for comms", componentAttr(CLI))
+		c.logger.Debug("stopCommsWorkers waiting for comms", slog.String("component", string(CLI)))
 		<-c.commsStopped // wait for comms routine to stop
 
-		DEBUG.Println(CLI, "stopCommsWorkers done")
-		c.logger.Debug("stopCommsWorkers done", componentAttr(CLI))
+		c.logger.Debug("stopCommsWorkers done", slog.String("component", string(CLI)))
 		close(doneChan)
 	}()
 	return doneChan
@@ -833,8 +769,7 @@ func (c *client) stopCommsWorkers() chan struct{} {
 // Returns a token to track delivery of the message to the broker
 func (c *client) Publish(topic string, qos byte, retained bool, payload interface{}) Token {
 	token := newToken(packets.Publish).(*PublishToken)
-	DEBUG.Println(CLI, "enter Publish")
-	c.logger.Debug("enter Publish", componentAttr(CLI))
+	c.logger.Debug("enter Publish", slog.String("component", string(CLI)))
 	switch {
 	case !c.IsConnected():
 		token.setError(ErrNotConnected)
@@ -872,17 +807,13 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 	persistOutbound(c.persist, pub, c.logger)
 	switch c.status.ConnectionStatus() {
 	case connecting:
-		DEBUG.Println(CLI, "storing publish message (connecting), topic:", topic)
-		c.logger.Debug("storing publish message (connecting)", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("storing publish message (connecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
 	case reconnecting:
-		DEBUG.Println(CLI, "storing publish message (reconnecting), topic:", topic)
-		c.logger.Debug("storing publish message (reconnecting)", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("storing publish message (reconnecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
 	case disconnecting:
-		DEBUG.Println(CLI, "storing publish message (disconnecting), topic:", topic)
-		c.logger.Debug("storing publish message (disconnecting)", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("storing publish message (disconnecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
 	default:
-		DEBUG.Println(CLI, "sending publish message, topic:", topic)
-		c.logger.Debug("sending publish message", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("sending publish message", slog.String("topic", topic), slog.String("component", string(CLI)))
 		publishWaitTimeout := c.options.WriteTimeout
 		if publishWaitTimeout == 0 {
 			publishWaitTimeout = time.Second * 30
@@ -909,8 +840,7 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 // callback must be safe for concurrent use by multiple goroutines.
 func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Token {
 	token := newToken(packets.Subscribe).(*SubscribeToken)
-	DEBUG.Println(CLI, "enter Subscribe")
-	c.logger.Debug("enter Subscribe", componentAttr(CLI))
+	c.logger.Debug("enter Subscribe", slog.String("component", string(CLI)))
 	if !c.IsConnected() {
 		token.setError(ErrNotConnected)
 		return token
@@ -958,25 +888,20 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 		sub.MessageID = mID
 		token.messageID = mID
 	}
-	DEBUG.Println(CLI, sub.String())
-	c.logger.Debug("subscribe packet", slog.String("packet", sub.String()), componentAttr(CLI))
+	c.logger.Debug("subscribe packet", slog.String("packet", sub.String()), slog.String("component", string(CLI)))
 
 	if c.options.ResumeSubs { // Only persist if we need this to resume subs after a disconnection
 		persistOutbound(c.persist, sub, c.logger)
 	}
 	switch c.status.ConnectionStatus() {
 	case connecting:
-		DEBUG.Println(CLI, "storing subscribe message (connecting), topic:", topic)
-		c.logger.Debug("storing subscribe message (connecting)", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("storing subscribe message (connecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
 	case reconnecting:
-		DEBUG.Println(CLI, "storing subscribe message (reconnecting), topic:", topic)
-		c.logger.Debug("storing subscribe message (reconnecting)", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("storing subscribe message (reconnecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
 	case disconnecting:
-		DEBUG.Println(CLI, "storing subscribe message (disconnecting), topic:", topic)
-		c.logger.Debug("storing subscribe message (disconnecting)", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("storing subscribe message (disconnecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
 	default:
-		DEBUG.Println(CLI, "sending subscribe message, topic:", topic)
-		c.logger.Debug("sending subscribe message", slog.String("topic", topic), componentAttr(CLI))
+		c.logger.Debug("sending subscribe message", slog.String("topic", topic), slog.String("component", string(CLI)))
 		subscribeWaitTimeout := c.options.WriteTimeout
 		if subscribeWaitTimeout == 0 {
 			subscribeWaitTimeout = time.Second * 30
@@ -987,8 +912,7 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 			token.setError(errors.New("subscribe was broken by timeout"))
 		}
 	}
-	DEBUG.Println(CLI, "exit Subscribe")
-	c.logger.Debug("exit Subscribe", componentAttr(CLI))
+	c.logger.Debug("exit Subscribe", slog.String("component", string(CLI)))
 	return token
 }
 
@@ -1002,8 +926,7 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 func (c *client) SubscribeMultiple(filters map[string]byte, callback MessageHandler) Token {
 	var err error
 	token := newToken(packets.Subscribe).(*SubscribeToken)
-	DEBUG.Println(CLI, "enter SubscribeMultiple")
-	c.logger.Debug("enter SubscribeMultiple", componentAttr(CLI))
+	c.logger.Debug("enter SubscribeMultiple", slog.String("component", string(CLI)))
 	if !c.IsConnected() {
 		token.setError(ErrNotConnected)
 		return token
@@ -1048,17 +971,13 @@ func (c *client) SubscribeMultiple(filters map[string]byte, callback MessageHand
 	}
 	switch c.status.ConnectionStatus() {
 	case connecting:
-		DEBUG.Println(CLI, "storing subscribe message (connecting), topics:", sub.Topics)
-		c.logger.Debug("storing subscribe message (connecting)", slog.String("topics", strings.Join(sub.Topics, ",")), componentAttr(CLI))
+		c.logger.Debug("storing subscribe message (connecting)", slog.String("topics", strings.Join(sub.Topics, ",")), slog.String("component", string(CLI)))
 	case reconnecting:
-		DEBUG.Println(CLI, "storing subscribe message (reconnecting), topics:", sub.Topics)
-		c.logger.Debug("storing subscribe message (reconnecting)", slog.String("topics", strings.Join(sub.Topics, ",")), componentAttr(CLI))
+		c.logger.Debug("storing subscribe message (reconnecting)", slog.String("topics", strings.Join(sub.Topics, ",")), slog.String("component", string(CLI)))
 	case disconnecting:
-		DEBUG.Println(CLI, "storing subscribe message (disconnecting), topics:", sub.Topics)
-		c.logger.Debug("storing subscribe message (disconnecting)", slog.String("topics", strings.Join(sub.Topics, ",")), componentAttr(CLI))
+		c.logger.Debug("storing subscribe message (disconnecting)", slog.String("topics", strings.Join(sub.Topics, ",")), slog.String("component", string(CLI)))
 	default:
-		DEBUG.Println(CLI, "sending subscribe message, topics:", sub.Topics)
-		c.logger.Debug("sending subscribe message", slog.String("topics", strings.Join(sub.Topics, ",")), componentAttr(CLI))
+		c.logger.Debug("sending subscribe message", slog.String("topics", strings.Join(sub.Topics, ",")), slog.String("component", string(CLI)))
 		subscribeWaitTimeout := c.options.WriteTimeout
 		if subscribeWaitTimeout == 0 {
 			subscribeWaitTimeout = time.Second * 30
@@ -1069,8 +988,7 @@ func (c *client) SubscribeMultiple(filters map[string]byte, callback MessageHand
 			token.setError(errors.New("subscribe was broken by timeout"))
 		}
 	}
-	DEBUG.Println(CLI, "exit SubscribeMultiple")
-	c.logger.Debug("exit SubscribeMultiple", componentAttr(CLI))
+	c.logger.Debug("exit SubscribeMultiple", slog.String("component", string(CLI)))
 	return token
 }
 
@@ -1102,8 +1020,7 @@ func (c *client) reserveStoredPublishIDs() {
 // other than that it does not return until all messages in the store have been sent (connect() does not complete its
 // token before this completes)
 func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
-	DEBUG.Println(STR, "enter Resume")
-	c.logger.Debug("enter Resume", componentAttr(STR))
+	c.logger.Debug("enter Resume", slog.String("component", string(STR)))
 
 	// Prior to sending a message getSemaphore will be called and once sent releaseSemaphore will be called
 	// with the token (so semaphore can be released when ACK received if applicable).
@@ -1140,8 +1057,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 	for _, key := range storedKeys {
 		packet := c.persist.Get(key)
 		if packet == nil {
-			DEBUG.Println(STR, fmt.Sprintf("resume found NIL packet (%s)", key))
-			c.logger.Debug(fmt.Sprintf("resume found NIL packet (%s)", key), componentAttr(STR))
+			c.logger.Debug(fmt.Sprintf("resume found NIL packet (%s)", key), slog.String("component", string(STR)))
 			continue
 		}
 		details := packet.Details()
@@ -1149,8 +1065,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 			switch p := packet.(type) {
 			case *packets.SubscribePacket:
 				if subscription {
-					DEBUG.Println(STR, fmt.Sprintf("loaded pending subscribe (%d)", details.MessageID))
-					c.logger.Debug(fmt.Sprintf("loaded pending subscribe (%d)", details.MessageID), componentAttr(STR))
+					c.logger.Debug(fmt.Sprintf("loaded pending subscribe (%d)", details.MessageID), slog.String("component", string(STR)))
 					subPacket := packet.(*packets.SubscribePacket)
 					token := newToken(packets.Subscribe).(*SubscribeToken)
 					token.messageID = details.MessageID
@@ -1159,8 +1074,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 					select {
 					case c.oboundP <- &PacketAndToken{p: packet, t: token}:
 					case <-c.stop:
-						DEBUG.Println(STR, "resume exiting due to stop")
-						c.logger.Debug("resume exiting due to stop", componentAttr(STR))
+						c.logger.Debug("resume exiting due to stop", slog.String("component", string(STR)))
 						return
 					}
 				} else {
@@ -1168,27 +1082,23 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 				}
 			case *packets.UnsubscribePacket:
 				if subscription {
-					DEBUG.Println(STR, fmt.Sprintf("loaded pending unsubscribe (%d)", details.MessageID))
-					c.logger.Debug(fmt.Sprintf("loaded pending unsubscribe (%d)", details.MessageID), componentAttr(STR))
+					c.logger.Debug(fmt.Sprintf("loaded pending unsubscribe (%d)", details.MessageID), slog.String("component", string(STR)))
 					token := newToken(packets.Unsubscribe).(*UnsubscribeToken)
 					select {
 					case c.oboundP <- &PacketAndToken{p: packet, t: token}:
 					case <-c.stop:
-						DEBUG.Println(STR, "resume exiting due to stop")
-						c.logger.Debug("resume exiting due to stop", componentAttr(STR))
+						c.logger.Debug("resume exiting due to stop", slog.String("component", string(STR)))
 						return
 					}
 				} else {
 					c.persist.Del(key) // Unsubscribe packets should not be retained following a reconnect
 				}
 			case *packets.PubrelPacket:
-				DEBUG.Println(STR, fmt.Sprintf("loaded pending pubrel (%d)", details.MessageID))
-				c.logger.Debug(fmt.Sprintf("loaded pending pubrel (%d)", details.MessageID), componentAttr(STR))
+				c.logger.Debug(fmt.Sprintf("loaded pending pubrel (%d)", details.MessageID), slog.String("component", string(STR)))
 				select {
 				case c.oboundP <- &PacketAndToken{p: packet, t: nil}:
 				case <-c.stop:
-					DEBUG.Println(STR, "resume exiting due to stop")
-					c.logger.Debug("resume exiting due to stop", componentAttr(STR))
+					c.logger.Debug("resume exiting due to stop", slog.String("component", string(STR)))
 					return
 				}
 			case *packets.PublishPacket:
@@ -1204,51 +1114,43 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 				token := newToken(packets.Publish).(*PublishToken)
 				token.messageID = details.MessageID
 				c.claimID(token, details.MessageID)
-				DEBUG.Println(STR, fmt.Sprintf("loaded pending publish (%d)", details.MessageID))
-				c.logger.Debug(fmt.Sprintf("loaded pending publish (%d)", details.MessageID), componentAttr(STR))
-				DEBUG.Println(STR, details)
-				c.logger.Debug("details", slog.String("messageID", fmt.Sprintf("%d", details.MessageID)), slog.Int("QoS", int(details.Qos)), componentAttr(STR))
+				c.logger.Debug(fmt.Sprintf("loaded pending publish (%d)", details.MessageID), slog.String("component", string(STR)))
+				c.logger.Debug("details", slog.String("messageID", fmt.Sprintf("%d", details.MessageID)), slog.Int("QoS", int(details.Qos)), slog.String("component", string(STR)))
 				getSemaphore()
 				select {
 				case c.obound <- &PacketAndToken{p: p, t: token}:
 				case <-c.stop:
-					DEBUG.Println(STR, "resume exiting due to stop")
-					c.logger.Debug("resume exiting due to stop", componentAttr(STR))
+					c.logger.Debug("resume exiting due to stop", slog.String("component", string(STR)))
 					return
 				}
 				releaseSemaphore(token) // If limiting simultaneous messages then we need to know when message is acknowledged
 			default:
-				ERROR.Println(STR, fmt.Sprintf("invalid message type (inbound - %T) in store (discarded)", packet))
 				c.logger.Error("invalid message type in store (discarded)",
 					slog.String("type", fmt.Sprintf("%T", packet)),
-					componentAttr(STR),
+					slog.String("component", string(STR)),
 				)
 				c.persist.Del(key)
 			}
 		} else {
 			switch packet.(type) {
 			case *packets.PubrelPacket:
-				DEBUG.Println(STR, fmt.Sprintf("loaded pending incomming (%d)", details.MessageID))
-				c.logger.Debug("loaded pending incomming", slog.String("messageID", fmt.Sprintf("%d", details.MessageID)), componentAttr(STR))
+				c.logger.Debug("loaded pending incomming", slog.String("messageID", fmt.Sprintf("%d", details.MessageID)), slog.String("component", string(STR)))
 				select {
 				case ibound <- packet:
 				case <-c.stop:
-					DEBUG.Println(STR, "resume exiting due to stop (ibound <- packet)")
-					c.logger.Debug("resume exiting due to stop (ibound <- packet)", componentAttr(STR))
+					c.logger.Debug("resume exiting due to stop (ibound <- packet)", slog.String("component", string(STR)))
 					return
 				}
 			default:
-				ERROR.Println(STR, fmt.Sprintf("invalid message type (%T) in store (discarded)", packet))
 				c.logger.Error("invalid message type in store (discarded)",
 					slog.String("type", fmt.Sprintf("%T", packet)),
-					componentAttr(STR),
+					slog.String("component", string(STR)),
 				)
 				c.persist.Del(key)
 			}
 		}
 	}
-	DEBUG.Println(STR, "exit resume")
-	c.logger.Debug("exit resume", componentAttr(STR))
+	c.logger.Debug("exit resume", slog.String("component", string(STR)))
 }
 
 // Unsubscribe will end the subscription from each of the topics provided.
@@ -1256,8 +1158,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 // received.
 func (c *client) Unsubscribe(topics ...string) Token {
 	token := newToken(packets.Unsubscribe).(*UnsubscribeToken)
-	DEBUG.Println(CLI, "enter Unsubscribe")
-	c.logger.Debug("enter Unsubscribe", componentAttr(CLI))
+	c.logger.Debug("enter Unsubscribe", slog.String("component", string(CLI)))
 	if !c.IsConnected() {
 		token.setError(ErrNotConnected)
 		return token
@@ -1294,17 +1195,13 @@ func (c *client) Unsubscribe(topics ...string) Token {
 
 	switch c.status.ConnectionStatus() {
 	case connecting:
-		DEBUG.Println(CLI, "storing unsubscribe message (connecting), topics:", topics)
-		c.logger.Debug("storing unsubscribe message (connecting)", slog.String("topics", strings.Join(topics, ",")), componentAttr(CLI))
+		c.logger.Debug("storing unsubscribe message (connecting)", slog.String("topics", strings.Join(topics, ",")), slog.String("component", string(CLI)))
 	case reconnecting:
-		DEBUG.Println(CLI, "storing unsubscribe message (reconnecting), topics:", topics)
-		c.logger.Debug("storing unsubscribe message (reconnecting)", slog.String("topics", strings.Join(topics, ",")), componentAttr(CLI))
+		c.logger.Debug("storing unsubscribe message (reconnecting)", slog.String("topics", strings.Join(topics, ",")), slog.String("component", string(CLI)))
 	case disconnecting:
-		DEBUG.Println(CLI, "storing unsubscribe message (reconnecting), topics:", topics)
-		c.logger.Debug("storing unsubscribe message (disconnecting)", slog.String("topics", strings.Join(topics, ",")), componentAttr(CLI))
+		c.logger.Debug("storing unsubscribe message (disconnecting)", slog.String("topics", strings.Join(topics, ",")), slog.String("component", string(CLI)))
 	default:
-		DEBUG.Println(CLI, "sending unsubscribe message, topics:", topics)
-		c.logger.Debug("sending unsubscribe message", slog.String("topics", strings.Join(topics, ",")), componentAttr(CLI))
+		c.logger.Debug("sending unsubscribe message", slog.String("topics", strings.Join(topics, ",")), slog.String("component", string(CLI)))
 		subscribeWaitTimeout := c.options.WriteTimeout
 		if subscribeWaitTimeout == 0 {
 			subscribeWaitTimeout = time.Second * 30
@@ -1319,8 +1216,7 @@ func (c *client) Unsubscribe(topics ...string) Token {
 		}
 	}
 
-	DEBUG.Println(CLI, "exit Unsubscribe")
-	c.logger.Debug("exit Unsubscribe", componentAttr(CLI))
+	c.logger.Debug("exit Unsubscribe", slog.String("component", string(CLI)))
 	return token
 }
 

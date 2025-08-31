@@ -63,8 +63,7 @@ func (mids *messageIds) cleanUp() {
 	}
 	mids.index = make(map[uint16]tokenCompletor)
 	mids.mu.Unlock()
-	DEBUG.Println(MID, "cleaned up")
-	mids.logger.Debug("cleaned up", componentAttr(MID))
+	mids.logger.Debug("cleaned up", slog.String("component", string(MID)))
 }
 
 // cleanUpSubscribe removes all SUBSCRIBE and UNSUBSCRIBE tokens (setting error)
@@ -82,8 +81,7 @@ func (mids *messageIds) cleanUpSubscribe() {
 		}
 	}
 	mids.mu.Unlock()
-	DEBUG.Println(MID, "cleaned up subs")
-	mids.logger.Debug("cleaned up subs", componentAttr(MID))
+	mids.logger.Debug("cleaned up subs", slog.String("component", string(MID)))
 }
 
 func (mids *messageIds) freeID(id uint16) {
@@ -163,7 +161,6 @@ func (d *DummyToken) Done() <-chan struct{} {
 }
 
 func (d *DummyToken) flowComplete() {
-	ERROR.Printf("A lookup for token %d returned nil\n", d.id)
 	if d.logger != nil {
 		d.logger.Error(fmt.Sprintf("A lookup for token %d returned nil\n", d.id))
 	}

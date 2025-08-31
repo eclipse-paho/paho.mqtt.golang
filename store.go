@@ -92,8 +92,7 @@ func persistOutbound(s Store, m packets.ControlPacket, logger *slog.Logger) {
 			// until puback received
 			s.Put(outboundKeyFromMID(m.Details().MessageID), m)
 		default:
-			DEBUG.Println(STR, "Asked to persist an invalid message type")
-			logger.Debug("Asked to persist an invalid message type", componentAttr(STR))
+			logger.Debug("Asked to persist an invalid message type", slog.String("component", string(STR)))
 		}
 	case 2:
 		switch m.(type) {
@@ -102,8 +101,7 @@ func persistOutbound(s Store, m packets.ControlPacket, logger *slog.Logger) {
 			// until pubrel received
 			s.Put(outboundKeyFromMID(m.Details().MessageID), m)
 		default:
-			DEBUG.Println(STR, "Asked to persist an invalid message type")
-			logger.Debug("Asked to persist an invalid message type", componentAttr(STR))
+			logger.Debug("Asked to persist an invalid message type", slog.String("component", string(STR)))
 		}
 	}
 }
@@ -119,8 +117,7 @@ func persistInbound(s Store, m packets.ControlPacket, logger *slog.Logger) {
 			s.Del(outboundKeyFromMID(m.Details().MessageID))
 		case *packets.PublishPacket, *packets.PubrecPacket, *packets.PingrespPacket, *packets.ConnackPacket:
 		default:
-			DEBUG.Println(STR, "Asked to persist an invalid messages type")
-			logger.Debug("Asked to persist an invalid messages type", componentAttr(STR))
+			logger.Debug("Asked to persist an invalid messages type", slog.String("component", string(STR)))
 		}
 	case 1:
 		switch m.(type) {
@@ -129,8 +126,7 @@ func persistInbound(s Store, m packets.ControlPacket, logger *slog.Logger) {
 			// until puback sent
 			s.Put(inboundKeyFromMID(m.Details().MessageID), m)
 		default:
-			DEBUG.Println(STR, "Asked to persist an invalid messages type")
-			logger.Debug("Asked to persist an invalid messages type", componentAttr(STR))
+			logger.Debug("Asked to persist an invalid messages type", slog.String("component", string(STR)))
 		}
 	case 2:
 		switch m.(type) {
@@ -139,8 +135,7 @@ func persistInbound(s Store, m packets.ControlPacket, logger *slog.Logger) {
 			// until pubrel received
 			s.Put(inboundKeyFromMID(m.Details().MessageID), m)
 		default:
-			DEBUG.Println(STR, "Asked to persist an invalid messages type")
-			logger.Debug("Asked to persist an invalid messages type", componentAttr(STR))
+			logger.Debug("Asked to persist an invalid messages type", slog.String("component", string(STR)))
 		}
 	}
 }
