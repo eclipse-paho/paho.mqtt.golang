@@ -7,12 +7,11 @@ type ConnectionNotificationType int64
 const (
 	ConnectionNotificationTypeUndefined ConnectionNotificationType = iota
 	ConnectionNotificationTypeConnected
+	ConnectionNotificationTypeConnecting
 	ConnectionNotificationTypeFailed
 	ConnectionNotificationTypeLost
-	ConnectionNotificationTypeReconnecting
 	ConnectionNotificationTypeAttempt
 	ConnectionNotificationTypeAttemptFailed
-	ConnectionNotificationTypeRetry
 )
 
 type ConnectionNotification interface {
@@ -26,6 +25,17 @@ type ConnectionNotificationConnected struct {
 
 func (n ConnectionNotificationConnected) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeConnected
+}
+
+// Connecting
+
+type ConnectionNotificationConnecting struct {
+	IsReconnect bool
+	Attempt     int
+}
+
+func (n ConnectionNotificationConnecting) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeConnecting
 }
 
 // ConnectionFailed
@@ -48,16 +58,6 @@ func (n ConnectionNotificationLost) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeLost
 }
 
-// Reconnecting
-
-type ConnectionNotificationReconnecting struct {
-	Reason error // may be nil
-}
-
-func (n ConnectionNotificationReconnecting) Type() ConnectionNotificationType {
-	return ConnectionNotificationTypeReconnecting
-}
-
 // ConnectionAttempt
 
 type ConnectionNotificationAttempt struct {
@@ -77,15 +77,4 @@ type ConnectionNotificationAttemptFailed struct {
 
 func (n ConnectionNotificationAttemptFailed) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeAttemptFailed
-}
-
-// Connected
-
-type ConnectionNotificationRetry struct {
-	Count  int
-	Reason error
-}
-
-func (n ConnectionNotificationRetry) Type() ConnectionNotificationType {
-	return ConnectionNotificationTypeRetry
 }

@@ -258,26 +258,20 @@ func (c *client) Connect() Token {
 			return
 		}
 
-		var retryCount int
+		var attemptCount int
 
 	RETRYCONN:
 		var conn net.Conn
 		var rc byte
 		var err error
-		conn, rc, t.sessionPresent, err = c.attemptConnection()
+		conn, rc, t.sessionPresent, err = c.attemptConnection(false, attemptCount)
 		if err != nil {
-			if c.options.OnConnectionNotification != nil {
-				c.options.OnConnectionNotification(c, ConnectionNotificationFailed{err})
-			}
+			attemptCount++
 			if c.options.ConnectRetry {
 				DEBUG.Println(CLI, "Connect failed, sleeping for", int(c.options.ConnectRetryInterval.Seconds()), "seconds and will then retry, error:", err.Error())
 				time.Sleep(c.options.ConnectRetryInterval)
 
 				if c.status.ConnectionStatus() == connecting { // Possible connection aborted elsewhere
-					retryCount++
-					if c.options.OnConnectionNotification != nil {
-						c.options.OnConnectionNotification(c, ConnectionNotificationRetry{retryCount, err})
-					}
 					goto RETRYCONN
 				}
 			}
@@ -325,17 +319,16 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 	}
 
 	var err error
+	var attemptCount int
 	for {
 		if nil != c.options.OnReconnecting {
 			c.options.OnReconnecting(c, &c.options)
 		}
-		if c.options.OnConnectionNotification != nil {
-			c.options.OnConnectionNotification(c, ConnectionNotificationReconnecting{err})
-		}
-		conn, _, _, err = c.attemptConnection()
+		conn, _, _, err = c.attemptConnection(true, attemptCount)
 		if err == nil {
 			break
 		}
+		attemptCount++
 		sleep, _ := c.backoff.sleepWithBackoff("attemptReconnection", initSleep, c.options.MaxReconnectInterval, c.options.ConnectTimeout, false)
 		DEBUG.Println(CLI, "Reconnect failed, slept for", int(sleep.Seconds()), "seconds:", err)
 
@@ -363,7 +356,7 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 // byte - Return code (packets.Accepted indicates a successful connection).
 // bool - SessionPresent flag from the connect ack (only valid if packets.Accepted)
 // err - Error (err != nil guarantees that conn has been set to active connection).
-func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
+func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byte, bool, error) {
 	protocolVersion := c.options.ProtocolVersion
 	var (
 		sessionPresent bool
@@ -371,6 +364,10 @@ func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
 		err            error
 		rc             byte
 	)
+
+	if c.options.OnConnectionNotification != nil {
+		c.options.OnConnectionNotification(c, ConnectionNotificationConnecting{isReconnect, attempt})
+	}
 
 	c.optionsMu.Lock() // Protect c.options.Servers so that servers can be added in test cases
 	brokers := c.options.Servers
@@ -447,6 +444,9 @@ func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
 		} else { // network error (if this occurred in ConnectMQTT then err will be nil)
 			err = fmt.Errorf("%w : %w", packets.ConnErrors[rc], err)
 		}
+	}
+	if err != nil && c.options.OnConnectionNotification != nil {
+		c.options.OnConnectionNotification(c, ConnectionNotificationFailed{err})
 	}
 	return conn, rc, sessionPresent, err
 }
