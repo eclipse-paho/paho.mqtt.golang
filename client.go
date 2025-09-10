@@ -258,17 +258,26 @@ func (c *client) Connect() Token {
 			return
 		}
 
+		var retryCount int
+
 	RETRYCONN:
 		var conn net.Conn
 		var rc byte
 		var err error
 		conn, rc, t.sessionPresent, err = c.attemptConnection()
 		if err != nil {
+			if c.options.OnConnectionNotification != nil {
+				c.options.OnConnectionNotification(c, ConnectionNotificationFailed{err})
+			}
 			if c.options.ConnectRetry {
 				DEBUG.Println(CLI, "Connect failed, sleeping for", int(c.options.ConnectRetryInterval.Seconds()), "seconds and will then retry, error:", err.Error())
 				time.Sleep(c.options.ConnectRetryInterval)
 
 				if c.status.ConnectionStatus() == connecting { // Possible connection aborted elsewhere
+					retryCount++
+					if c.options.OnConnectionNotification != nil {
+						c.options.OnConnectionNotification(c, ConnectionNotificationRetry{retryCount, err})
+					}
 					goto RETRYCONN
 				}
 			}
@@ -315,11 +324,14 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 		DEBUG.Println(CLI, "Detect continual connection lost after reconnect, slept for", int(slp.Seconds()), "seconds")
 	}
 
+	var err error
 	for {
 		if nil != c.options.OnReconnecting {
 			c.options.OnReconnecting(c, &c.options)
 		}
-		var err error
+		if c.options.OnConnectionNotification != nil {
+			c.options.OnConnectionNotification(c, ConnectionNotificationReconnecting{err})
+		}
 		conn, _, _, err = c.attemptConnection()
 		if err == nil {
 			break
@@ -372,6 +384,9 @@ func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
 			DEBUG.Println(CLI, "using custom onConnectAttempt handler...")
 			tlsCfg = c.options.OnConnectAttempt(broker, c.options.TLSConfig)
 		}
+		if c.options.OnConnectionNotification != nil {
+			c.options.OnConnectionNotification(c, ConnectionNotificationAttempt{broker})
+		}
 		connDeadline := time.Now().Add(c.options.ConnectTimeout) // Time by which connection must be established
 		dialer := c.options.Dialer
 		if dialer == nil { //
@@ -388,6 +403,9 @@ func (c *client) attemptConnection() (net.Conn, byte, bool, error) {
 			ERROR.Println(CLI, err.Error())
 			WARN.Println(CLI, "failed to connect to broker, trying next")
 			rc = packets.ErrNetworkError
+			if c.options.OnConnectionNotification != nil {
+				c.options.OnConnectionNotification(c, ConnectionNotificationAttemptFailed{broker, err})
+			}
 			continue
 		}
 		DEBUG.Println(CLI, "socket connected to broker")
@@ -564,6 +582,9 @@ func (c *client) internalConnLost(whyConnLost error) {
 		if c.options.OnConnectionLost != nil {
 			go c.options.OnConnectionLost(c, whyConnLost)
 		}
+		if c.options.OnConnectionNotification != nil {
+			go c.options.OnConnectionNotification(c, ConnectionNotificationLost{whyConnLost})
+		}
 		DEBUG.Println(CLI, "internalConnLost complete")
 	}()
 }
@@ -612,6 +633,9 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 	DEBUG.Println(CLI, "client is connected/reconnected")
 	if c.options.OnConnect != nil {
 		go c.options.OnConnect(c)
+	}
+	if c.options.OnConnectionNotification != nil {
+		go c.options.OnConnectionNotification(c, ConnectionNotificationConnected{})
 	}
 
 	// c.oboundP and c.obound need to stay active for the life of the client because, depending upon the options,

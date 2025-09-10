@@ -63,7 +63,7 @@ type ConnectionAttemptHandler func(broker *url.URL, tlsCfg *tls.Config) *tls.Con
 type OpenConnectionFunc func(uri *url.URL, options ClientOptions) (net.Conn, error)
 
 // ConnectionNotificationHandler is invoked for any type of connection event.
-type ConnectionNotificationHandler func(notification ConnectionNotification)
+type ConnectionNotificationHandler func(Client, ConnectionNotification)
 
 // ClientOptions contains configurable options for an Client. Note that these should be set using the
 // relevant methods (e.g. AddBroker) rather than directly. See those functions for information on usage.

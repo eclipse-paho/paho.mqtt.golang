@@ -7,12 +7,12 @@ type ConnectionNotificationType int64
 const (
 	ConnectionNotificationTypeUndefined ConnectionNotificationType = iota
 	ConnectionNotificationTypeConnected
-	ConnectionNotificationTypeConnectionLost
+	ConnectionNotificationTypeFailed
+	ConnectionNotificationTypeLost
 	ConnectionNotificationTypeReconnecting
-	ConnectionNotificationTypeConnectionAttempt
-	ConnectionNotificationTypeConnectionAttemptFailed
-	// ConnectionNotificationTypeConnectionRetry
-	// ConnectionNotificationTypeConnectionRetryFailed
+	ConnectionNotificationTypeAttempt
+	ConnectionNotificationTypeAttemptFailed
+	ConnectionNotificationTypeRetry
 )
 
 type ConnectionNotification interface {
@@ -22,28 +22,35 @@ type ConnectionNotification interface {
 // Connected
 
 type ConnectionNotificationConnected struct {
-	Client Client
 }
 
 func (n ConnectionNotificationConnected) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeConnected
 }
 
+// ConnectionFailed
+
+type ConnectionNotificationFailed struct {
+	Reason error
+}
+
+func (n ConnectionNotificationFailed) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeFailed
+}
+
 // ConnectionLost
 
-type ConnectionNotificationConnectionLost struct {
-	Client Client
+type ConnectionNotificationLost struct {
 	Reason error // may be nil
 }
 
-func (n ConnectionNotificationConnectionLost) Type() ConnectionNotificationType {
-	return ConnectionNotificationTypeConnectionLost
+func (n ConnectionNotificationLost) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeLost
 }
 
 // Reconnecting
 
 type ConnectionNotificationReconnecting struct {
-	Client Client
 	Reason error // may be nil
 }
 
@@ -53,21 +60,32 @@ func (n ConnectionNotificationReconnecting) Type() ConnectionNotificationType {
 
 // ConnectionAttempt
 
-type ConnectionNotificationConnectionAttempt struct {
+type ConnectionNotificationAttempt struct {
 	Broker *url.URL
 }
 
-func (n ConnectionNotificationConnectionAttempt) Type() ConnectionNotificationType {
-	return ConnectionNotificationTypeConnectionAttempt
+func (n ConnectionNotificationAttempt) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeAttempt
 }
 
 // ConnectionAttemptFailed
 
-type ConnectionNotificationConnectionAttemptFailed struct {
+type ConnectionNotificationAttemptFailed struct {
 	Broker *url.URL
 	Reason error
 }
 
-func (n ConnectionNotificationConnectionAttemptFailed) Type() ConnectionNotificationType {
-	return ConnectionNotificationTypeConnectionAttemptFailed
+func (n ConnectionNotificationAttemptFailed) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeAttemptFailed
+}
+
+// Connected
+
+type ConnectionNotificationRetry struct {
+	Count  int
+	Reason error
+}
+
+func (n ConnectionNotificationRetry) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeRetry
 }
