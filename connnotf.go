@@ -5,8 +5,7 @@ import "net/url"
 type ConnectionNotificationType int64
 
 const (
-	ConnectionNotificationTypeUndefined ConnectionNotificationType = iota
-	ConnectionNotificationTypeConnected
+	ConnectionNotificationTypeConnected ConnectionNotificationType = iota
 	ConnectionNotificationTypeConnecting
 	ConnectionNotificationTypeFailed
 	ConnectionNotificationTypeLost
@@ -38,7 +37,7 @@ func (n ConnectionNotificationConnecting) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeConnecting
 }
 
-// ConnectionFailed
+// Connection Failed
 
 type ConnectionNotificationFailed struct {
 	Reason error
@@ -48,7 +47,7 @@ func (n ConnectionNotificationFailed) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeFailed
 }
 
-// ConnectionLost
+// Connection Lost
 
 type ConnectionNotificationLost struct {
 	Reason error // may be nil
@@ -58,7 +57,7 @@ func (n ConnectionNotificationLost) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeLost
 }
 
-// ConnectionAttempt
+// Connection Attempt
 
 type ConnectionNotificationAttempt struct {
 	Broker *url.URL
@@ -68,7 +67,7 @@ func (n ConnectionNotificationAttempt) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeAttempt
 }
 
-// ConnectionAttemptFailed
+// Connection Attempt Failed
 
 type ConnectionNotificationAttemptFailed struct {
 	Broker *url.URL
