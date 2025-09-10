@@ -9,8 +9,8 @@ const (
 	ConnectionNotificationTypeConnecting
 	ConnectionNotificationTypeFailed
 	ConnectionNotificationTypeLost
-	ConnectionNotificationTypeAttempt
-	ConnectionNotificationTypeAttemptFailed
+	ConnectionNotificationTypeBroker
+	ConnectionNotificationTypeBrokerFailed
 )
 
 type ConnectionNotification interface {
@@ -57,23 +57,23 @@ func (n ConnectionNotificationLost) Type() ConnectionNotificationType {
 	return ConnectionNotificationTypeLost
 }
 
-// Connection Attempt
+// Broker Connection
 
-type ConnectionNotificationAttempt struct {
+type ConnectionNotificationBroker struct {
 	Broker *url.URL
 }
 
-func (n ConnectionNotificationAttempt) Type() ConnectionNotificationType {
-	return ConnectionNotificationTypeAttempt
+func (n ConnectionNotificationBroker) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeBroker
 }
 
-// Connection Attempt Failed
+// Broker Connection Failed
 
-type ConnectionNotificationAttemptFailed struct {
+type ConnectionNotificationBrokerFailed struct {
 	Broker *url.URL
 	Reason error
 }
 
-func (n ConnectionNotificationAttemptFailed) Type() ConnectionNotificationType {
-	return ConnectionNotificationTypeAttemptFailed
+func (n ConnectionNotificationBrokerFailed) Type() ConnectionNotificationType {
+	return ConnectionNotificationTypeBrokerFailed
 }

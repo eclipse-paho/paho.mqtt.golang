@@ -382,7 +382,7 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 			tlsCfg = c.options.OnConnectAttempt(broker, c.options.TLSConfig)
 		}
 		if c.options.OnConnectionNotification != nil {
-			c.options.OnConnectionNotification(c, ConnectionNotificationAttempt{broker})
+			c.options.OnConnectionNotification(c, ConnectionNotificationBroker{broker})
 		}
 		connDeadline := time.Now().Add(c.options.ConnectTimeout) // Time by which connection must be established
 		dialer := c.options.Dialer
@@ -401,7 +401,7 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 			WARN.Println(CLI, "failed to connect to broker, trying next")
 			rc = packets.ErrNetworkError
 			if c.options.OnConnectionNotification != nil {
-				c.options.OnConnectionNotification(c, ConnectionNotificationAttemptFailed{broker, err})
+				c.options.OnConnectionNotification(c, ConnectionNotificationBrokerFailed{broker, err})
 			}
 			continue
 		}
