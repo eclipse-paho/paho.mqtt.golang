@@ -318,12 +318,12 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 		DEBUG.Println(CLI, "Detect continual connection lost after reconnect, slept for", int(slp.Seconds()), "seconds")
 	}
 
-	var err error
 	var attemptCount int
 	for {
 		if nil != c.options.OnReconnecting {
 			c.options.OnReconnecting(c, &c.options)
 		}
+		var err error
 		conn, _, _, err = c.attemptConnection(true, attemptCount)
 		if err == nil {
 			break
