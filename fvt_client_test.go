@@ -1711,3 +1711,77 @@ func Test_OverLengthTopic(t *testing.T) {
 	p.Disconnect(250)
 	s.Disconnect(250)
 }
+
+// Test_Ack_After_Disconnect issue #726
+// Must not panic if Ack is sent after connection loss
+func Test_Ack_After_Disconnect(t *testing.T) {
+	pops := NewClientOptions()
+	pops.AddBroker(FVTTCP)
+	pops.SetClientID("Ack_After_Disconnect_tx")
+	p := NewClient(pops)
+
+	msgReceived := make(chan struct{})
+	disconnectDone := make(chan struct{})
+	ackCalled := make(chan bool)
+
+	sops := NewClientOptions()
+	sops.AddBroker(FVTTCP)
+	sops.AutoAckDisabled = true // Manual message Acknowledgment (so we can delay this)
+	sops.SetClientID("Ack_After_Disconnect_rx")
+	var f MessageHandler = func(client Client, msg Message) {
+		// matchAndDispatch waits for handlers to complete, so we return after
+		// starting a goroutine that will call Ack eventually
+		close(msgReceived)
+		go func() {
+			defer close(ackCalled) // should only ever get one message
+
+			select {
+			case <-disconnectDone:
+				msg.Ack()
+				ackCalled <- true
+			case <-time.After(time.Second):
+				ackCalled <- false
+			}
+		}()
+	}
+	sops.SetDefaultPublishHandler(f)
+	s := NewClient(sops)
+
+	sToken := s.Connect()
+	if sToken.Wait() && sToken.Error() != nil {
+		t.Fatalf("Error on Client.Connect(): %v", sToken.Error())
+	}
+
+	s.Subscribe("/test/ack-after-disconnect", 2, nil)
+
+	pToken := p.Connect()
+	if pToken.Wait() && pToken.Error() != nil {
+		t.Fatalf("Error on Client.Connect(): %v", pToken.Error())
+	}
+
+	p.Publish("/test/ack-after-disconnect", 2, false, "Publish qos0")
+
+	select {
+	case <-msgReceived:
+	case <-time.After(time.Second):
+		t.Error("Timed out waiting for message to be received")
+	}
+
+	p.Disconnect(0)
+	s.Disconnect(0)
+
+	// Hack to wait until disconnection complete
+	for s.(*client).status.status != disconnected {
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(disconnectDone)
+
+	select {
+	case c := <-ackCalled:
+		if !c {
+			t.Error("Did not receive message, so no attempt made to send Ack")
+		}
+	case <-time.After(time.Second):
+		t.Error("Timed out waiting for ackCalled")
+	}
+}
