@@ -56,3 +56,12 @@ func (ua *UnsubackPacket) Unpack(b io.Reader) error {
 func (ua *UnsubackPacket) Details() Details {
 	return Details{Qos: 0, MessageID: ua.MessageID}
 }
+
+// Copy creates a deep copy of the UnsubackPacket
+func (ua *UnsubackPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Unsuback).(*UnsubackPacket)
+
+	*cp = *ua
+
+	return cp
+}
