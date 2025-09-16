@@ -1770,8 +1770,8 @@ func Test_Ack_After_Disconnect(t *testing.T) {
 	p.Disconnect(0)
 	s.Disconnect(0)
 
-	// Hack to wait until disconnection complete
-	for s.(*client).status.status != disconnected {
+	// Ensure disconnection complete before proceeding
+	for s.(*client).status.ConnectionStatus() != disconnected {
 		time.Sleep(10 * time.Millisecond)
 	}
 	close(disconnectDone)
