@@ -985,7 +985,7 @@ func Test_CallbackOverrun(t *testing.T) {
 
 	err := <-handlerError
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 
 	time.Sleep(time.Microsecond) // Allow a little time in case the handler returning after connection dropped causes an issue (panic)
@@ -1206,7 +1206,7 @@ func Test_cleanUpMids_2(t *testing.T) {
 		t.Fatalf("Should be a token in the messageIDs, none found")
 	}
 	// fmt.Println("Disconnecting", len(cl.messageIds.index))
-	c.Disconnect(0)
+	c.Disconnect(500) // Wait half a second to allow operation to complete
 
 	fmt.Println("Wait on Token")
 	// We should be able to wait on this token without any issue
