@@ -27,7 +27,7 @@ import (
 )
 
 func Test_newRouter(t *testing.T) {
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	if router == nil {
 		t.Fatalf("router is nil")
 	}
@@ -37,7 +37,7 @@ func Test_newRouter(t *testing.T) {
 }
 
 func Test_AddRoute(t *testing.T) {
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	cb := func(client Client, msg Message) {
 	}
 	router.addRoute("/alpha", cb)
@@ -48,7 +48,7 @@ func Test_AddRoute(t *testing.T) {
 }
 
 func Test_AddRoute_Wildcards(t *testing.T) {
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	cb := func(client Client, msg Message) {
 	}
 	router.addRoute("#", cb)
@@ -60,7 +60,7 @@ func Test_AddRoute_Wildcards(t *testing.T) {
 }
 
 func Test_DeleteRoute_Wildcards(t *testing.T) {
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	cb := func(client Client, msg Message) {
 	}
 	router.addRoute("#", cb)
@@ -75,7 +75,7 @@ func Test_DeleteRoute_Wildcards(t *testing.T) {
 }
 
 func Test_Match(t *testing.T) {
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	router.addRoute("/alpha", nil)
 
 	if !router.routes.Front().Value.(*route).match("/alpha") {
@@ -296,7 +296,7 @@ func Test_MatchAndDispatch(t *testing.T) {
 
 	msgs := make(chan *packets.PublishPacket)
 
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	router.addRoute("a", cb)
 
 	stopped := make(chan bool)
@@ -332,7 +332,7 @@ func Test_SharedSubscription_MatchAndDispatch(t *testing.T) {
 
 	msgs := make(chan *packets.PublishPacket)
 
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	router.addRoute("$share/az1/a", cb)
 
 	stopped := make(chan bool)
@@ -369,7 +369,7 @@ func Benchmark_MatchAndDispatch(b *testing.B) {
 
 	msgs := make(chan *packets.PublishPacket, 1)
 
-	router := newRouter()
+	router := newRouter(noopSLogger)
 	router.addRoute("a", cb)
 
 	var wg sync.WaitGroup
