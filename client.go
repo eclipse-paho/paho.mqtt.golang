@@ -871,9 +871,7 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 		topic = strings.Join(strings.Split(topic, "/")[2:], "/")
 	}
 
-	if strings.HasPrefix(topic, "$queue/") {
-		topic = strings.TrimPrefix(topic, "$queue/")
-	}
+	topic = strings.TrimPrefix(topic, "$queue/")
 
 	if callback != nil {
 		c.msgRouter.addRoute(topic, callback)
