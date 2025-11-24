@@ -85,7 +85,7 @@ func Test_persistOutbound_connect(t *testing.T) {
 	m.Password = []byte("pass")
 	m.ClientIdentifier = "cid"
 	// m := newConnectMsg(false, false, QOS_ZERO, false, "", nil, "cid", "user", "pass", 10)
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -107,7 +107,7 @@ func Test_persistOutbound_publish_0(t *testing.T) {
 	m.TopicName = "/popub0"
 	m.Payload = []byte{0xBB, 0x00}
 	m.MessageID = 40
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -129,7 +129,7 @@ func Test_persistOutbound_publish_1(t *testing.T) {
 	m.TopicName = "/popub1"
 	m.Payload = []byte{0xBB, 0x00}
 	m.MessageID = 41
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 41 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -151,7 +151,7 @@ func Test_persistOutbound_publish_2(t *testing.T) {
 	m.TopicName = "/popub2"
 	m.Payload = []byte{0xBB, 0x00}
 	m.MessageID = 42
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 42 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -169,7 +169,7 @@ func Test_persistOutbound_publish_2(t *testing.T) {
 func Test_persistOutbound_puback(t *testing.T) {
 	ts := &TestStore{}
 	m := packets.NewControlPacket(packets.Puback).(*packets.PubackPacket)
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -187,7 +187,7 @@ func Test_persistOutbound_puback(t *testing.T) {
 func Test_persistOutbound_pubrec(t *testing.T) {
 	ts := &TestStore{}
 	m := packets.NewControlPacket(packets.Pubrec).(*packets.PubrecPacket)
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -207,7 +207,7 @@ func Test_persistOutbound_pubrel(t *testing.T) {
 	m := packets.NewControlPacket(packets.Pubrel).(*packets.PubrelPacket)
 	m.MessageID = 43
 
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 43 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -225,7 +225,7 @@ func Test_persistOutbound_pubrel(t *testing.T) {
 func Test_persistOutbound_pubcomp(t *testing.T) {
 	ts := &TestStore{}
 	m := packets.NewControlPacket(packets.Pubcomp).(*packets.PubcompPacket)
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -246,7 +246,7 @@ func Test_persistOutbound_subscribe(t *testing.T) {
 	m.Topics = []string{"/posub"}
 	m.Qoss = []byte{1}
 	m.MessageID = 44
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 44 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -266,7 +266,7 @@ func Test_persistOutbound_unsubscribe(t *testing.T) {
 	m := packets.NewControlPacket(packets.Unsubscribe).(*packets.UnsubscribePacket)
 	m.Topics = []string{"/posub"}
 	m.MessageID = 45
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 45 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -284,7 +284,7 @@ func Test_persistOutbound_unsubscribe(t *testing.T) {
 func Test_persistOutbound_pingreq(t *testing.T) {
 	ts := &TestStore{}
 	m := packets.NewControlPacket(packets.Pingreq)
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -302,7 +302,7 @@ func Test_persistOutbound_pingreq(t *testing.T) {
 func Test_persistOutbound_disconnect(t *testing.T) {
 	ts := &TestStore{}
 	m := packets.NewControlPacket(packets.Disconnect)
-	persistOutbound(ts, m)
+	persistOutbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistOutbound put message it should not have")
@@ -324,7 +324,7 @@ func Test_persistOutbound_disconnect(t *testing.T) {
 func Test_persistInbound_connack(t *testing.T) {
 	ts := &TestStore{}
 	m := packets.NewControlPacket(packets.Connack)
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistInbound in bad state")
@@ -346,7 +346,7 @@ func Test_persistInbound_publish_0(t *testing.T) {
 	m.TopicName = "/pipub0"
 	m.Payload = []byte{0xCC, 0x01}
 	m.MessageID = 50
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistInbound in bad state")
@@ -368,7 +368,7 @@ func Test_persistInbound_publish_1(t *testing.T) {
 	m.TopicName = "/pipub1"
 	m.Payload = []byte{0xCC, 0x02}
 	m.MessageID = 51
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 51 {
 		t.Fatalf("persistInbound in bad state")
@@ -390,7 +390,7 @@ func Test_persistInbound_publish_2(t *testing.T) {
 	m.TopicName = "/pipub2"
 	m.Payload = []byte{0xCC, 0x03}
 	m.MessageID = 52
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 52 {
 		t.Fatalf("persistInbound in bad state")
@@ -418,7 +418,7 @@ func Test_persistInbound_puback(t *testing.T) {
 	m := packets.NewControlPacket(packets.Puback).(*packets.PubackPacket)
 	m.MessageID = 53
 
-	persistInbound(ts, m) // "deletes" packets.Publish from store
+	persistInbound(ts, m, noopSLogger) // "deletes" packets.Publish from store
 
 	if len(ts.mput) != 1 { // not actually deleted in TestStore
 		t.Fatalf("persistInbound in bad state")
@@ -446,7 +446,7 @@ func Test_persistInbound_pubrec(t *testing.T) {
 	m := packets.NewControlPacket(packets.Pubrec).(*packets.PubrecPacket)
 	m.MessageID = 54
 
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 1 || ts.mput[0] != 54 {
 		t.Fatalf("persistInbound in bad state")
@@ -474,7 +474,7 @@ func Test_persistInbound_pubrel(t *testing.T) {
 	m := packets.NewControlPacket(packets.Pubrel).(*packets.PubrelPacket)
 	m.MessageID = 55
 
-	persistInbound(ts, m) // will overwrite publish
+	persistInbound(ts, m, noopSLogger) // will overwrite publish
 
 	if len(ts.mput) != 2 {
 		t.Fatalf("persistInbound in bad state")
@@ -495,7 +495,7 @@ func Test_persistInbound_pubcomp(t *testing.T) {
 	m := packets.NewControlPacket(packets.Pubcomp).(*packets.PubcompPacket)
 	m.MessageID = 56
 
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistInbound in bad state")
@@ -516,7 +516,7 @@ func Test_persistInbound_suback(t *testing.T) {
 	m := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
 	m.MessageID = 57
 
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistInbound in bad state")
@@ -537,7 +537,7 @@ func Test_persistInbound_unsuback(t *testing.T) {
 	m := packets.NewControlPacket(packets.Unsuback).(*packets.UnsubackPacket)
 	m.MessageID = 58
 
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistInbound in bad state")
@@ -556,7 +556,7 @@ func Test_persistInbound_pingresp(t *testing.T) {
 	ts := &TestStore{}
 	m := packets.NewControlPacket(packets.Pingresp)
 
-	persistInbound(ts, m)
+	persistInbound(ts, m, noopSLogger)
 
 	if len(ts.mput) != 0 {
 		t.Fatalf("persistInbound in bad state")

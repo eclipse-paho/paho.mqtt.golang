@@ -23,7 +23,7 @@ import (
 )
 
 func Test_getID(t *testing.T) {
-	mids := &messageIds{index: make(map[uint16]tokenCompletor)}
+	mids := &messageIds{index: make(map[uint16]tokenCompletor), logger: noopSLogger}
 
 	i1 := mids.getID(&DummyToken{})
 
@@ -46,7 +46,7 @@ func Test_getID(t *testing.T) {
 }
 
 func Test_freeID(t *testing.T) {
-	mids := &messageIds{index: make(map[uint16]tokenCompletor)}
+	mids := &messageIds{index: make(map[uint16]tokenCompletor), logger: noopSLogger}
 
 	i1 := mids.getID(&DummyToken{})
 	mids.freeID(i1)
@@ -63,7 +63,7 @@ func Test_freeID(t *testing.T) {
 func Test_noFreeID(t *testing.T) {
 	var d DummyToken
 
-	mids := &messageIds{index: make(map[uint16]tokenCompletor)}
+	mids := &messageIds{index: make(map[uint16]tokenCompletor), logger: noopSLogger}
 
 	for i := midMin; i != 0; i++ {
 		// Uncomment to see all message IDS log.Println(i)
