@@ -242,6 +242,8 @@ func (o *ClientOptions) SetCleanSession(clean bool) *ClientOptions {
 // Note that setting this to true does not guarantee in-order delivery
 // (this is subject to broker settings like "max_inflight_messages=1" in mosquitto)
 // and if true then handlers must not block.
+// Some stores do not support SetOrderMatters(true) meaning that ordering may be lost
+// upon reconnection (MemoryStore does not, see OrderedMemoryStore or FileStore)
 func (o *ClientOptions) SetOrderMatters(order bool) *ClientOptions {
 	o.Order = order
 	return o
@@ -409,8 +411,10 @@ func (o *ClientOptions) SetConnectRetryInterval(t time.Duration) *ClientOptions 
 // SetConnectRetry sets whether the connect function will automatically retry the connection
 // in the event of a failure (when true the token returned by the Connect function will
 // not complete until the connection is up or it is cancelled)
-// If ConnectRetry is true then subscriptions should be requested in OnConnect handler
-// Setting this to TRUE permits messages to be published before the connection is established
+// If ConnectRetry is true:
+//   - subscriptions should be requested in OnConnect handler
+//   - messages may be published (i.e. Publish will not return error) before the connection is established
+//   - disconnect must be called should you wish to abort the connection process
 func (o *ClientOptions) SetConnectRetry(a bool) *ClientOptions {
 	o.ConnectRetry = a
 	return o

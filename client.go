@@ -74,7 +74,7 @@ type Client interface {
 	Connect() Token
 	// Disconnect will end the connection with the server, but not before waiting
 	// the specified number of milliseconds to wait for existing work to be
-	// completed.
+	// completed. Disconnect can be safely called regardless of connection status.
 	Disconnect(quiesce uint)
 	// Publish will publish a message with the specified QoS and content
 	// to the specified topic.
@@ -454,6 +454,7 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 // Disconnect will end the connection with the server, but not before waiting
 // the specified number of milliseconds to wait for existing work to be
 // completed.
+// Disconnect can be safely called regardless of connection status.
 // WARNING: `Disconnect` may return before all activities (goroutines) have completed. This means that
 // reusing the `client` may lead to panics. If you want to reconnect when the connection drops then use
 // `SetAutoReconnect` and/or `SetConnectRetry`options instead of implementing this yourself.
