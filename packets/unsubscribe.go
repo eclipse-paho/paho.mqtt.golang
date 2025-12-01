@@ -42,7 +42,10 @@ func (u *UnsubscribePacket) Write(w io.Writer) error {
 		body.Write(encodeString(topic))
 	}
 	u.FixedHeader.RemainingLength = body.Len()
-	packet := u.FixedHeader.pack()
+	packet, err := u.FixedHeader.pack()
+	if err != nil {
+		return err
+	}
 	packet.Write(body.Bytes())
 	_, err = packet.WriteTo(w)
 
