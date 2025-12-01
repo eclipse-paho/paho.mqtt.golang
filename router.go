@@ -20,6 +20,7 @@ package mqtt
 
 import (
 	"container/list"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -85,12 +86,13 @@ type router struct {
 	routes         *list.List
 	defaultHandler MessageHandler
 	messages       chan *packets.PublishPacket
+	logger         *slog.Logger
 }
 
 // newRouter returns a new instance of a Router and channel which can be used to tell the Router
 // to stop
-func newRouter() *router {
-	router := &router{routes: list.New(), messages: make(chan *packets.PublishPacket)}
+func newRouter(logger *slog.Logger) *router {
+	router := &router{routes: list.New(), messages: make(chan *packets.PublishPacket), logger: logger}
 	return router
 }
 
@@ -149,7 +151,7 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 		if sendAckChan != nil {
 			sendAckChan <- ack
 		} else {
-			DEBUG.Println(ROU, "matchAndDispatch received acknowledgment after processing stopped (ACK dropped).")
+			r.logger.Debug("matchAndDispatch received acknowledgment after processing stopped (ACK dropped).", slog.String("component", string(ROU)))
 		}
 	}
 
@@ -159,7 +161,7 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 			// DEBUG.Println(ROU, "matchAndDispatch received message")
 			sent := false
 			r.RLock()
-			m := messageFromPublish(message, ackFunc(sendAck, client.persist, message))
+			m := messageFromPublish(message, ackFunc(sendAck, client.persist, message, r.logger))
 			for e := r.routes.Front(); e != nil; e = e.Next() {
 				if e.Value.(*route).match(message.TopicName) {
 					if order {
@@ -189,7 +191,7 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 						}()
 					}
 				} else {
-					DEBUG.Println(ROU, "matchAndDispatch received message and no handler was available. Message will NOT be acknowledged.")
+					r.logger.Debug("matchAndDispatch received message and no handler was available. Message will NOT be acknowledged.", slog.String("component", string(ROU)))
 				}
 			}
 			r.RUnlock()
@@ -208,7 +210,7 @@ func (r *router) matchAndDispatch(messages <-chan *packets.PublishPacket, order 
 		sendAckChan = nil
 		ackMutex.Unlock()
 		close(ackChan) // as sendAckChan is now nil nothing further will be sent on this
-		DEBUG.Println(ROU, "matchAndDispatch exiting")
+		r.logger.Debug("matchAndDispatch exiting", slog.String("component", string(ROU)))
 	}()
 	return ackChan
 }

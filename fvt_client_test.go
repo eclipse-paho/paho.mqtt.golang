@@ -1455,7 +1455,7 @@ func Test_ResumeSubsWithReconnect(t *testing.T) {
 	}
 	DEBUG.Println(CLI, sub.String())
 
-	persistOutbound(c.(*client).persist, sub)
+	persistOutbound(c.(*client).persist, sub, noopSLogger)
 	// subToken := c.Subscribe(topic, qos, nil)
 	c.(*client).internalConnLost(fmt.Errorf("reconnection subscription test"))
 
