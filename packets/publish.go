@@ -44,7 +44,10 @@ func (p *PublishPacket) Write(w io.Writer) error {
 		body.Write(encodeUint16(p.MessageID))
 	}
 	p.FixedHeader.RemainingLength = body.Len() + len(p.Payload)
-	packet := p.FixedHeader.pack()
+	packet, err := p.FixedHeader.pack()
+	if err != nil {
+		return err
+	}
 	packet.Write(body.Bytes())
 	packet.Write(p.Payload)
 	_, err = w.Write(packet.Bytes())

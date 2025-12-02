@@ -39,6 +39,22 @@ func main() {
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetDefaultPublishHandler(f)
 	opts.SetPingTimeout(1 * time.Second)
+	opts.SetConnectionNotificationHandler(func(client mqtt.Client, notification mqtt.ConnectionNotification) {
+		switch n := notification.(type) {
+		case mqtt.ConnectionNotificationConnected:
+			fmt.Printf("[NOTIFICATION] connected\n")
+		case mqtt.ConnectionNotificationConnecting:
+			fmt.Printf("[NOTIFICATION] connecting (isReconnect=%t) [%d]\n", n.IsReconnect, n.Attempt)
+		case mqtt.ConnectionNotificationFailed:
+			fmt.Printf("[NOTIFICATION] connection failed: %v\n", n.Reason)
+		case mqtt.ConnectionNotificationLost:
+			fmt.Printf("[NOTIFICATION] connection lost: %v\n", n.Reason)
+		case mqtt.ConnectionNotificationBroker:
+			fmt.Printf("[NOTIFICATION] broker connection: %s\n", n.Broker.String())
+		case mqtt.ConnectionNotificationBrokerFailed:
+			fmt.Printf("[NOTIFICATION] broker connection failed: %v [%s]\n", n.Reason, n.Broker.String())
+		}
+	})
 
 	c := mqtt.NewClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {

@@ -248,10 +248,29 @@ func TestEncoding(t *testing.T) {
 		if res, err := decodeLength(bytes.NewBuffer(encoded)); res != length || err != nil {
 			t.Errorf("decodeLength([0x%X]) did not return (%d, nil) but (%d, %v)", encoded, length, res, err)
 		}
-		if res := encodeLength(length); !bytes.Equal(res, encoded) {
+		if res, err := encodeLength(length); !bytes.Equal(res, encoded) || err != nil {
 			t.Errorf("encodeLength(%d) did not return [0x%X], but [0x%X]", length, encoded, res)
 		}
 	}
+
+	// Encoding or decoding data longer than 268,435,455 bytes should fail with an error (this check was added to
+	// the 3.1.1 spec after publication). Checking this when sending avoids sending invalid packet.
+	tooLong := []byte{0xFF, 0xFF, 0xFF, 0x80, 0x01}
+	if _, err := decodeLength(bytes.NewBuffer(tooLong)); err == nil {
+		t.Errorf("decodeLength([0x%X]) did not return error", tooLong)
+	}
+	if _, err := encodeLength(268435456); err == nil {
+		t.Error("encodeLength(268435456) did not return error")
+	}
+
+	// When encoding a string longer than 2^16 bytes, the result must not exceed the length of the 16 bit header
+	// (previously this was possible due to the use of uint16(len(field)) for the length and then writing the entirety of
+	// field.
+	overlengthStr := bytes.Repeat([]byte("A"), 65600)         // longer than 2^16
+	if res := encodeBytes(overlengthStr); len(res) != 65537 { // Two byte length so 65535 + 2 = 65537
+		t.Errorf("encodeBytes did not truncate overlength data (expected len 65538, received %d", len(res))
+	}
+
 }
 
 // isCopy checks if the original and copy are the same, recursively.

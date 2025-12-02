@@ -35,7 +35,10 @@ func (ua *UnsubackPacket) String() string {
 func (ua *UnsubackPacket) Write(w io.Writer) error {
 	var err error
 	ua.FixedHeader.RemainingLength = 2
-	packet := ua.FixedHeader.pack()
+	packet, err := ua.FixedHeader.pack()
+	if err != nil {
+		return err
+	}
 	packet.Write(encodeUint16(ua.MessageID))
 	_, err = packet.WriteTo(w)
 

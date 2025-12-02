@@ -263,11 +263,15 @@ func boolToByte(b bool) byte {
 	}
 }
 
-func (fh *FixedHeader) pack() bytes.Buffer {
+func (fh *FixedHeader) pack() (bytes.Buffer, error) {
 	var header bytes.Buffer
 	header.WriteByte(fh.MessageType<<4 | boolToByte(fh.Dup)<<3 | fh.Qos<<1 | boolToByte(fh.Retain))
-	header.Write(encodeLength(fh.RemainingLength))
-	return header
+	l, err := encodeLength(fh.RemainingLength)
+	if err != nil {
+		return header, err
+	}
+	header.Write(l)
+	return header, nil
 }
 
 func (fh *FixedHeader) unpack(typeAndFlags byte, r io.Reader) error {
@@ -331,12 +335,22 @@ func decodeBytes(b io.Reader) ([]byte, error) {
 }
 
 func encodeBytes(field []byte) []byte {
+	// Attempting to encode more than 65,535 bytes would lead to an unexpected 16-bit length and extra data written
+	// (which would be parsed as later parts of the message). The safest option is to truncate.
+	if len(field) > 65535 {
+		field = field[0:65535]
+	}
 	fieldLength := make([]byte, 2)
 	binary.BigEndian.PutUint16(fieldLength, uint16(len(field)))
 	return append(fieldLength, field...)
 }
 
-func encodeLength(length int) []byte {
+// encodeLength encodes the "Remaining Length" as per 2.2.3 in the spec
+func encodeLength(length int) ([]byte, error) {
+	// Spec states max packet size is 268,435,455 bytes. Sending length outside this range is invalid.
+	if length < 0 || length > 268435455 {
+		return nil, errors.New("invalid packet length")
+	}
 	var encLength []byte
 	for {
 		digit := byte(length % 128)
@@ -349,14 +363,15 @@ func encodeLength(length int) []byte {
 			break
 		}
 	}
-	return encLength
+	return encLength, nil
 }
 
+// decodeLength decodes the "Remaining Length" as per 2.2.3 in the spec
 func decodeLength(r io.Reader) (int, error) {
 	var rLength uint32
 	var multiplier uint32
 	b := make([]byte, 1)
-	for multiplier < 27 { // fix: Infinite '(digit & 128) == 1' will cause the dead loop
+	for {
 		_, err := io.ReadFull(r, b)
 		if err != nil {
 			return 0, err
@@ -368,6 +383,9 @@ func decodeLength(r io.Reader) (int, error) {
 			break
 		}
 		multiplier += 7
+		if multiplier >= 27 {
+			return 0, errors.New("malformed remaining length") // maximum of 4 bytes may be used (see example in spec)
+		}
 	}
 	return int(rLength), nil
 }
