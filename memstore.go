@@ -93,11 +93,10 @@ func (store *MemoryStore) Get(key string) packets.ControlPacket {
 	m := store.messages[key]
 	if m == nil {
 		store.logger.Warn("memorystore get: message not found", slog.Uint64("messageID", uint64(mid)), slog.String("component", string(STR)))
-	} else {
-		store.logger.Debug("memorystore get: message found", slog.Uint64("messageID", uint64(mid)), slog.String("component", string(STR)))
+		return m
 	}
 
-	DEBUG.Println(STR, "memorystore get: message", mid, "found")
+	store.logger.Debug("memorystore get: message found", slog.Uint64("messageID", uint64(mid)), slog.String("component", string(STR)))
 
 	return m.Copy()
 }
