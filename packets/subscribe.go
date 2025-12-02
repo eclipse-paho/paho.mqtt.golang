@@ -86,3 +86,22 @@ func (s *SubscribePacket) Unpack(b io.Reader) error {
 func (s *SubscribePacket) Details() Details {
 	return Details{Qos: 1, MessageID: s.MessageID}
 }
+
+// Copy creates a deep copy of the SubscribePacket
+func (s *SubscribePacket) Copy() ControlPacket {
+	cp := NewControlPacket(Subscribe).(*SubscribePacket)
+
+	*cp = *s
+
+	if len(s.Topics) > 0 {
+		cp.Topics = make([]string, len(s.Topics))
+		copy(cp.Topics, s.Topics)
+	}
+
+	if len(s.Qoss) > 0 {
+		cp.Qoss = make([]byte, len(s.Qoss))
+		copy(cp.Qoss, s.Qoss)
+	}
+
+	return cp
+}

@@ -59,3 +59,12 @@ func (pa *PubackPacket) Unpack(b io.Reader) error {
 func (pa *PubackPacket) Details() Details {
 	return Details{Qos: pa.Qos, MessageID: pa.MessageID}
 }
+
+// Copy creates a deep copy of the PubackPacket
+func (pa *PubackPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Puback).(*PubackPacket)
+
+	*cp = *pa
+
+	return cp
+}

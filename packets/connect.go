@@ -172,3 +172,22 @@ func (c *ConnectPacket) Validate() byte {
 func (c *ConnectPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
 }
+
+// Copy creates a deep copy of the ConnectPacket
+func (c *ConnectPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Connect).(*ConnectPacket)
+
+	*cp = *c
+
+	if len(c.Password) > 0 {
+		cp.Password = make([]byte, len(c.Password))
+		copy(cp.Password, c.Password)
+	}
+
+	if len(c.WillMessage) > 0 {
+		cp.WillMessage = make([]byte, len(c.WillMessage))
+		copy(cp.WillMessage, c.WillMessage)
+	}
+
+	return cp
+}
