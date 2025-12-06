@@ -60,7 +60,9 @@ func match(route []string, topic []string) bool {
 }
 
 func routeIncludesTopic(route, topic string) bool {
-	return match(routeSplit(route), strings.Split(topic, "/"))
+	splitedRoute := routeSplit(route)
+	splitedTopic := strings.Split(topic, "/")
+	return match(splitedRoute, splitedTopic)
 }
 
 // removes $share and sharename when splitting the route to allow
