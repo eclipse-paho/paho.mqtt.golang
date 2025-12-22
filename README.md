@@ -1,6 +1,6 @@
 
-[![PkgGoDev](https://pkg.go.dev/badge/github.com/eclipse/paho.mqtt.golang)](https://pkg.go.dev/github.com/eclipse/paho.mqtt.golang)
-[![Go Report Card](https://goreportcard.com/badge/github.com/eclipse/paho.mqtt.golang)](https://goreportcard.com/report/github.com/eclipse/paho.mqtt.golang)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/liooooo29/paho.mqtt.golang)](https://pkg.go.dev/github.com/liooooo29/paho.mqtt.golang)
+[![Go Report Card](https://goreportcard.com/badge/github.com/liooooo29/paho.mqtt.golang)](https://goreportcard.com/report/github.com/liooooo29/paho.mqtt.golang)
 
 Eclipse Paho MQTT Go client
 ===========================
@@ -22,19 +22,19 @@ The process depends upon whether you are using [modules](https://golang.org/ref/
 
 #### Modules
 
-If you are using [modules](https://blog.golang.org/using-go-modules) then `import "github.com/eclipse/paho.mqtt.golang"` 
+If you are using [modules](https://blog.golang.org/using-go-modules) then `import "github.com/liooooo29/paho.mqtt.golang"` 
 and start using it. The necessary packages will be download automatically when you run `go build`. 
 
 Note that the latest release will be downloaded and changes may have been made since the release. If you have 
 encountered an issue, or wish to try the latest code for another reason, then run 
-`go get github.com/eclipse/paho.mqtt.golang@master` to get the latest commit.
+`go get github.com/liooooo29/paho.mqtt.golang@master` to get the latest commit.
 
 #### GOPATH
 
 Installation is as easy as:
 
 ```
-go get github.com/eclipse/paho.mqtt.golang
+go get github.com/liooooo29/paho.mqtt.golang
 ```
 
 The client depends on Google's [proxy](https://godoc.org/golang.org/x/net/proxy) package and the 
@@ -50,7 +50,7 @@ Usage and API
 -------------
 
 Detailed API documentation is available by using to godoc tool, or can be browsed online
-using the [pkg.go.dev](https://pkg.go.dev/github.com/eclipse/paho.mqtt.golang) service.
+using the [pkg.go.dev](https://pkg.go.dev/github.com/liooooo29/paho.mqtt.golang) service.
 
 Samples are available in the `cmd` directory for reference.
 
@@ -136,7 +136,7 @@ by default.
 Reporting bugs
 --------------
 
-Please report bugs by raising issues for this project in github https://github.com/eclipse/paho.mqtt.golang/issues
+Please report bugs by raising issues for this project in github https://github.com/liooooo29/paho.mqtt.golang/issues
 
 A limited number of contributors monitor the issues section so if you have a general question please see the 
 resources in the [more information](#more-information) section for help.

@@ -35,7 +35,7 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
-	"github.com/eclipse/paho.mqtt.golang/packets"
+	"github.com/liooooo29/paho.mqtt.golang/packets"
 )
 
 // Client is the interface definition for a Client as used by this
@@ -114,6 +114,9 @@ type Client interface {
 	// OptionsReader returns a ClientOptionsReader which is a copy of the clientoptions
 	// in use by the client.
 	OptionsReader() ClientOptionsReader
+
+	// ForceDisconnect will end the connection with the mqtt broker immediately (used for tests only)
+	ForceDisconnectOutter() // renamed to avoid conflict with Disconnect in interface
 }
 
 // client implements the Client interface
@@ -491,6 +494,11 @@ func (c *client) forceDisconnect() {
 	DEBUG.Println(CLI, "forcefully disconnecting")
 	c.disconnect()
 	disDone()
+}
+
+// ForceDisconnectOutter will end the connection with the mqtt broker immediately (used for tests only)
+func (c *client) ForceDisconnectOutter() {
+	c.forceDisconnect()
 }
 
 // disconnect cleans up after a final disconnection (user requested so no auto reconnection)

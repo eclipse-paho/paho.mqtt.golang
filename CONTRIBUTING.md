@@ -46,11 +46,11 @@ Search for bugs:
 
 This project uses Github issues to track ongoing development and issues.
 
-- https://github.com/eclipse/paho.mqtt.golang/issues
+- https://github.com/liooooo29/paho.mqtt.golang/issues
 
 Create a new bug:
 -----------------
 
 Be sure to search for existing bugs before you create another one. Remember that contributions are always welcome!
 
-- https://github.com/eclipse/paho.mqtt.golang/issues
+- https://github.com/liooooo29/paho.mqtt.golang/issues
