@@ -1,9 +1,9 @@
 module github.com/liooooo29/paho.mqtt.golang
 
-go 1.14
+go 1.24.0
 
 require (
-	github.com/gorilla/websocket v1.4.2
-	golang.org/x/net v0.0.0-20200425230154-ff2c4b7c35a0
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	github.com/gorilla/websocket v1.5.3
+	golang.org/x/net v0.44.0
+	golang.org/x/sync v0.17.0
 )

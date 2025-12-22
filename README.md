@@ -113,7 +113,9 @@ identifier; this is as per the [spec](https://docs.oasis-open.org/mqtt/mqtt/v3.1
 not received, disconnecting` errors). 
 * When QOS1+ subscriptions have been created previously and you connect with `CleanSession` set to false it is possible 
 that the broker will deliver retained messages before `Subscribe` can be called. To process these messages either 
-configure a handler with `AddRoute` or set a `DefaultPublishHandler`.
+configure a handler with `AddRoute` or set a `DefaultPublishHandler`. If there is no handler (or `DefaultPublishHandler`) 
+then inbound messages will not be acknowledged. Adding a handler (even if it's  `opts.SetDefaultPublishHandler(func(mqtt.Client, mqtt.Message) {})`) 
+is highly recommended to avoid inadvertently hitting inflight message limits.
 * Loss of network connectivity may not be detected immediately. If this is an issue then consider setting 
 `ClientOptions.KeepAlive` (sends regular messages to check the link is active).
 * Reusing a `Client` is not completely safe. After calling `Disconnect` please create a new Client (`NewClient()`) rather 

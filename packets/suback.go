@@ -40,7 +40,10 @@ func (sa *SubackPacket) Write(w io.Writer) error {
 	body.Write(encodeUint16(sa.MessageID))
 	body.Write(sa.ReturnCodes)
 	sa.FixedHeader.RemainingLength = body.Len()
-	packet := sa.FixedHeader.pack()
+	packet, err := sa.FixedHeader.pack()
+	if err != nil {
+		return err
+	}
 	packet.Write(body.Bytes())
 	_, err = packet.WriteTo(w)
 

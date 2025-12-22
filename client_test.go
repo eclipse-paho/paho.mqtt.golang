@@ -63,7 +63,12 @@ func TestCustomConnectionFunction(t *testing.T) {
 	client := NewClient(options)
 
 	// Try to connect using custom function, wait for 2 seconds, to pass MQTT first message
-	if token := client.Connect(); token.WaitTimeout(2*time.Second) && token.Error() != nil {
+	// Note that the token should NOT complete (because a CONNACK is never sent)
+	token := client.Connect()
+	if token.WaitTimeout(2 * time.Second) {
+		t.Fatal("token should not complete") // should be blocked waiting for CONNACK
+	}
+	if token.Error() != nil { // Should never have an error
 		t.Fatalf("%v", token.Error())
 	}
 

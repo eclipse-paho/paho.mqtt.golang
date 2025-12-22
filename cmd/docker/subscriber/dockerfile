@@ -4,7 +4,7 @@ ENV CGO_ENABLED 0
 
 ADD . /sub_src
 WORKDIR /sub_src
-RUN go build -gcflags "all=-N -l" -o /sub
+RUN go mod tidy && go build -gcflags "all=-N -l" -o /sub
 
 # Final stage
 FROM alpine:latest

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -984,7 +985,7 @@ func Test_CallbackOverrun(t *testing.T) {
 
 	err := <-handlerError
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 
 	time.Sleep(time.Microsecond) // Allow a little time in case the handler returning after connection dropped causes an issue (panic)
@@ -1205,7 +1206,7 @@ func Test_cleanUpMids_2(t *testing.T) {
 		t.Fatalf("Should be a token in the messageIDs, none found")
 	}
 	// fmt.Println("Disconnecting", len(cl.messageIds.index))
-	c.Disconnect(0)
+	c.Disconnect(500) // Wait half a second to allow operation to complete
 
 	fmt.Println("Wait on Token")
 	// We should be able to wait on this token without any issue
@@ -1454,7 +1455,7 @@ func Test_ResumeSubsWithReconnect(t *testing.T) {
 	}
 	DEBUG.Println(CLI, sub.String())
 
-	persistOutbound(c.(*client).persist, sub)
+	persistOutbound(c.(*client).persist, sub, noopSLogger)
 	// subToken := c.Subscribe(topic, qos, nil)
 	c.(*client).internalConnLost(fmt.Errorf("reconnection subscription test"))
 
@@ -1656,4 +1657,131 @@ getLoop:
 
 	p.Disconnect(250)
 	s.Disconnect(250)
+}
+
+// Test_OverLengthTopic - there was an issue where an overlength topic would result in the topic leaking into the
+// message body when it was overlength.
+func Test_OverLengthTopic(t *testing.T) {
+	const baseTopic = "/test/overlength/"
+	validTopic := baseTopic + strings.Repeat("A", 65535-len(baseTopic))
+	overLenTopic := validTopic + "B"
+
+	choke := make(chan bool)
+
+	pops := NewClientOptions()
+	pops.AddBroker(FVTTCP)
+	pops.SetClientID("overlentopic-pub")
+	p := NewClient(pops)
+
+	sops := NewClientOptions()
+	sops.AddBroker(FVTTCP)
+	sops.SetClientID("overlentopic-sub")
+	var f MessageHandler = func(client Client, msg Message) {
+		// Too long to print each time!
+		// fmt.Printf("TOPIC: %s\n", msg.Topic())
+		//fmt.Printf("MSG: %s\n", msg.Payload())
+		if msg.Topic() != validTopic {
+			t.Fatalf("Message topic incorrect (expected %s, got %s)", validTopic, msg.Topic())
+		}
+		if string(msg.Payload()) != "oltopic payload" {
+			fmt.Println("Message payload incorrect", msg.Payload(), len("pubmsg payload"))
+			t.Fatalf("Message payload incorrect")
+		}
+		choke <- true
+	}
+	sops.SetDefaultPublishHandler(f)
+
+	s := NewClient(sops)
+	if token := s.Connect(); token.Wait() && token.Error() != nil {
+		t.Fatalf("Error on Client.Connect(): %v", token.Error())
+	}
+
+	if token := s.Subscribe(baseTopic+"#", 0, nil); token.Wait() && token.Error() != nil {
+		t.Fatalf("Error on Client.Subscribe(): %v", token.Error())
+	}
+
+	if token := p.Connect(); token.Wait() && token.Error() != nil {
+		t.Fatalf("Error on Client.Connect(): %v", token.Error())
+	}
+
+	text := "oltopic payload"
+	p.Publish(overLenTopic, 0, false, text)
+	wait(choke)
+
+	p.Disconnect(250)
+	s.Disconnect(250)
+}
+
+// Test_Ack_After_Disconnect issue #726
+// Must not panic if Ack is sent after connection loss
+func Test_Ack_After_Disconnect(t *testing.T) {
+	pops := NewClientOptions()
+	pops.AddBroker(FVTTCP)
+	pops.SetClientID("Ack_After_Disconnect_tx")
+	p := NewClient(pops)
+
+	msgReceived := make(chan struct{})
+	disconnectDone := make(chan struct{})
+	ackCalled := make(chan bool)
+
+	sops := NewClientOptions()
+	sops.AddBroker(FVTTCP)
+	sops.AutoAckDisabled = true // Manual message Acknowledgment (so we can delay this)
+	sops.SetClientID("Ack_After_Disconnect_rx")
+	var f MessageHandler = func(client Client, msg Message) {
+		// matchAndDispatch waits for handlers to complete, so we return after
+		// starting a goroutine that will call Ack eventually
+		close(msgReceived)
+		go func() {
+			defer close(ackCalled) // should only ever get one message
+
+			select {
+			case <-disconnectDone:
+				msg.Ack()
+				ackCalled <- true
+			case <-time.After(time.Second):
+				ackCalled <- false
+			}
+		}()
+	}
+	sops.SetDefaultPublishHandler(f)
+	s := NewClient(sops)
+
+	sToken := s.Connect()
+	if sToken.Wait() && sToken.Error() != nil {
+		t.Fatalf("Error on Client.Connect(): %v", sToken.Error())
+	}
+
+	s.Subscribe("/test/ack-after-disconnect", 2, nil)
+
+	pToken := p.Connect()
+	if pToken.Wait() && pToken.Error() != nil {
+		t.Fatalf("Error on Client.Connect(): %v", pToken.Error())
+	}
+
+	p.Publish("/test/ack-after-disconnect", 2, false, "Publish qos0")
+
+	select {
+	case <-msgReceived:
+	case <-time.After(time.Second):
+		t.Error("Timed out waiting for message to be received")
+	}
+
+	p.Disconnect(0)
+	s.Disconnect(0)
+
+	// Ensure disconnection complete before proceeding
+	for s.(*client).status.ConnectionStatus() != disconnected {
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(disconnectDone)
+
+	select {
+	case c := <-ackCalled:
+		if !c {
+			t.Error("Did not receive message, so no attempt made to send Ack")
+		}
+	case <-time.After(time.Second):
+		t.Error("Timed out waiting for ackCalled")
+	}
 }

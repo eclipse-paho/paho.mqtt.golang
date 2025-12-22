@@ -40,3 +40,21 @@ func TestWaitTimeout(t *testing.T) {
 		t.Fatal("Should have succeeded")
 	}
 }
+
+func TestWaitTokenTimeout(t *testing.T) {
+	b := baseToken{}
+
+	if !errors.Is(WaitTokenTimeout(&b, time.Second), TimedOut) {
+		t.Fatal("Should have failed")
+	}
+
+	// Now let's confirm that WaitTimeout returns correct error
+	b = baseToken{complete: make(chan struct{})}
+	testError := errors.New("test")
+	go func(bt *baseToken) {
+		bt.setError(testError)
+	}(&b)
+	if !errors.Is(WaitTokenTimeout(&b, 5*time.Second), testError) {
+		t.Fatal("Unexpected error received")
+	}
+}

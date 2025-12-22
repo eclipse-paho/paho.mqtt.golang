@@ -1,6 +1,8 @@
 module publisher
 
-go 1.15
+go 1.24.0
+
+require github.com/eclipse/paho.mqtt.golang v1.5.0
 
 require (
 	github.com/liooooo29/paho.mqtt.golang v1.3.5

@@ -41,7 +41,10 @@ func (ca *ConnackPacket) Write(w io.Writer) error {
 	body.WriteByte(boolToByte(ca.SessionPresent))
 	body.WriteByte(ca.ReturnCode)
 	ca.FixedHeader.RemainingLength = 2
-	packet := ca.FixedHeader.pack()
+	packet, err := ca.FixedHeader.pack()
+	if err != nil {
+		return err
+	}
 	packet.Write(body.Bytes())
 	_, err = packet.WriteTo(w)
 
