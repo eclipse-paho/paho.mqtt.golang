@@ -90,7 +90,7 @@ type ClientOptions struct {
 	TLSConfig                *tls.Config
 	KeepAlive                int64 // Warning: Some brokers may reject connections with Keepalive = 0.
 	PingTimeout              time.Duration
-	ConnectTimeout           time.Duration
+	ConnectTimeout           time.Duration // duration of 0 never times out
 	MaxReconnectInterval     time.Duration
 	AutoReconnect            bool
 	ConnectRetryInterval     time.Duration
@@ -102,12 +102,12 @@ type ClientOptions struct {
 	OnReconnecting           ReconnectHandler
 	OnConnectAttempt         ConnectionAttemptHandler
 	OnConnectionNotification ConnectionNotificationHandler
-	WriteTimeout             time.Duration
+	WriteTimeout             time.Duration // duration of 0 never times out
 	MessageChannelDepth      uint
 	ResumeSubs               bool
 	HTTPHeaders              http.Header
 	WebsocketOptions         *WebsocketOptions
-	MaxResumePubInFlight     int // // 0 = no limit; otherwise this is the maximum simultaneous messages sent while resuming
+	MaxResumePubInFlight     int // 0 = no limit; otherwise this is the maximum simultaneous messages sent while resuming
 	Dialer                   *net.Dialer
 	CustomOpenConnectionFn   OpenConnectionFunc
 	AutoAckDisabled          bool

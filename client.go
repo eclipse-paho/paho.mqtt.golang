@@ -39,6 +39,8 @@ import (
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
+const maxDuration = 1<<63 - 1
+
 // Client is the interface definition for a Client as used by this
 // library, the interface is primarily to allow mocking tests.
 //
@@ -399,17 +401,21 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 		if c.options.OnConnectionNotification != nil {
 			c.options.OnConnectionNotification(c, ConnectionNotificationBroker{broker})
 		}
-		connDeadline := time.Now().Add(c.options.ConnectTimeout) // Time by which connection must be established
+		connTimeOut := c.options.ConnectTimeout
+		if connTimeOut == 0 { // SetConnectTimeout states "duration of 0 never times out." (default is 30s)
+			connTimeOut = maxDuration
+		}
+		connDeadline := time.Now().Add(connTimeOut) // Time by which connection must be established
 		dialer := c.options.Dialer
 		if dialer == nil { //
 			c.logger.Info("dialer was nil, using default", slog.String("component", string(CLI)))
-			dialer = &net.Dialer{Timeout: 30 * time.Second}
+			dialer = &net.Dialer{Timeout: connTimeOut}
 		}
 		// Start by opening the network connection (tcp, tls, ws) etc
 		if c.options.CustomOpenConnectionFn != nil {
 			conn, err = c.options.CustomOpenConnectionFn(broker, c.options)
 		} else {
-			conn, err = openConnection(broker, tlsCfg, c.options.ConnectTimeout, c.options.HTTPHeaders, c.options.WebsocketOptions, dialer)
+			conn, err = openConnection(broker, tlsCfg, connTimeOut, c.options.HTTPHeaders, c.options.WebsocketOptions, dialer)
 		}
 		if err != nil {
 			c.logger.Error("Failed to connect to broker", slog.String("error", err.Error()), slog.String("component", string(CLI)))
