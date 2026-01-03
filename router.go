@@ -71,7 +71,7 @@ func routeIncludesTopic(route, topic string) bool {
 }
 
 func isUnmatchedWildcardFilter(route, topic []string) bool {
-	// ignores unexpected situations by returning true.
+	// ignores unexpected situations by returning false.
 	if len(route) == 0 || len(topic) == 0 {
 		return false
 	}
