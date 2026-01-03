@@ -87,6 +87,45 @@ func Test_Match(t *testing.T) {
 	}
 }
 
+func Test_matchWithWildcardTopicFilter(t *testing.T) {
+	cases := []struct {
+		name     string
+		filter   string
+		topic    string
+		expected bool
+	}{
+		// OK cases with wildcards
+		{"OK_WithPlus", "example/+/temp/+", "example/gauge/temp/25", true},
+		{"OK_WithPlus_$", "$sys/+/temp/+", "$sys/gauge/temp/25", true},
+		{"OK_WithSharp", "example/machines/#", "example/machines/robot-2/voltage", true},
+		{"OK_WithSharp_$", "$SYS/machines/#", "$SYS/machines/robot-2/voltage", true},
+
+		// OK cases with filter starting with wildcards
+		{"OK_OnlyPlus", "+", "sensor", true},
+		{"OK_StartWithPlus", "+/example", "sensor/example", true},
+		{"OK_OnlySharp", "#", "sensor/very/long/topic", true},
+		{"OK_SharedTopicWithPlus", "$share/group/+/example/+/data", "sensor/example/something/data", true},
+		{"OK_SharedTopicWithSharp", "$share/group/#", "sensor/this/is/shared", true},
+
+		// NG cases with filter starting with wildcards and topics starting with $
+		{"NG_OnlyPlus", "+", "$SYS", false},
+		{"NG_StartWithPlus", "+/example/sensor/+", "$VENDOR/example/sensor/data", false},
+		{"NG_OnlySharp", "#", "$sys/very/long/topic", false},
+		{"NG_SharedTopicWithSharp", "$share/group/#", "$vendor/this/is/shared", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			router := newRouter(noopSLogger)
+			router.addRoute(c.filter, nil)
+			result := router.routes.Front().Value.(*route).match(c.topic)
+			if result != c.expected {
+				t.Errorf("match function returned %v, expected %v for filter '%s' and topic '%s'", result, c.expected, c.filter, c.topic)
+			}
+		})
+	}
+}
+
 func Test_match(t *testing.T) {
 
 	check := func(route, topic string, exp bool) {

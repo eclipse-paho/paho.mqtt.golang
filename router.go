@@ -60,7 +60,37 @@ func match(route []string, topic []string) bool {
 }
 
 func routeIncludesTopic(route, topic string) bool {
-	return match(routeSplit(route), strings.Split(topic, "/"))
+	splitedRoute := routeSplit(route)
+	splitedTopic := strings.Split(topic, "/")
+
+	if isUnmatchedWildcardFilter(splitedRoute, splitedTopic) {
+		return false
+	}
+
+	return match(splitedRoute, splitedTopic)
+}
+
+func isUnmatchedWildcardFilter(route, topic []string) bool {
+	// ignores unexpected situations by returning false.
+	if len(route) == 0 || len(topic) == 0 {
+		return false
+	}
+	if route[0] == "" || topic[0] == "" {
+		return false
+	}
+
+	if route[0] != "#" && route[0] != "+" {
+		return false
+	}
+
+	// considers the following statement from MQTT v3.1.1 specification:
+	// The Server MUST NOT match Topic Filters starting with a wildcard character (# or +)
+	// with Topic Names beginning with a $ character [MQTT-4.7.2-1].
+	if []rune(topic[0])[0] == '$' {
+		return true
+	}
+
+	return false
 }
 
 // removes $share and sharename when splitting the route to allow
