@@ -561,7 +561,11 @@ func (c *client) internalConnLost(whyConnLost error) {
 	// (including after sending a DisconnectPacket) as such we only do cleanup etc if the
 	// routines were actually running and are not being disconnected at users request
 	c.logger.Debug("internalConnLost called", slog.String("component", string(CLI)))
-	disDone, err := c.status.ConnectionLost(c.options.AutoReconnect && c.status.ConnectionStatus() > connecting)
+	// reconnectExpected indicates whether we anticipate transitioning into a reconnect. When AutoReconnect is
+	// disabled (or we were not fully connected) the connection lost handler will return a nil reconnect function
+	// and that is the expected behaviour (rather than a bug).
+	reconnectExpected := c.options.AutoReconnect && c.status.ConnectionStatus() > connecting
+	disDone, err := c.status.ConnectionLost(reconnectExpected)
 	if err != nil {
 		if err == errConnLossWhileDisconnecting || err == errAlreadyHandlingConnectionLoss {
 			return // Loss of connection is expected or already being handled
@@ -594,7 +598,7 @@ func (c *client) internalConnLost(whyConnLost error) {
 		reConnDone, err := disDone(true)
 		if err != nil {
 			c.logger.Error("failure whilst reporting completion of disconnect", slog.Any("error", err), slog.String("component", string(CLI)))
-		} else if reConnDone == nil { // Should never happen
+		} else if reConnDone == nil && reconnectExpected { // Should never happen (a reconnect was expected but no reconnect function was returned)
 			c.logger.Error("BUG BUG BUG reconnection function is nil", slog.Any("error", err), slog.String("component", string(CLI)))
 		}
 
