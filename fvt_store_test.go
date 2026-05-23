@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
@@ -255,6 +256,83 @@ func Test_FileStore_Get_Corrupted(t *testing.T) {
 
 	if !bytes.Equal(exp, contents) {
 		t.Fatal("archived corrupted bytes not the same as those saved", exp, contents)
+	}
+}
+
+// Test_FileStore_Open_FailsFastWhenDirectoryUnusable verifies that Open() fails fast (panics)
+// when the store directory cannot be used, rather than allowing the problem to surface later as
+// a panic mid-operation or as silent message loss. See issue #720.
+//
+// The store is pointed at a path that is a regular file rather than a directory; Open() cannot
+// create its temporary write-test file underneath it. Using a regular file (instead of relying on
+// filesystem permissions) keeps the test independent of the user it runs as (root bypasses perms).
+func Test_FileStore_Open_FailsFastWhenDirectoryUnusable(t *testing.T) {
+	notADir := t.TempDir() + "/iamafile"
+	if err := os.WriteFile(notADir, []byte("x"), 0600); err != nil {
+		t.Fatalf("failed to set up test file: %v", err)
+	}
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected Open() to panic when the store directory is unusable, but it did not")
+		}
+	}()
+
+	f := NewFileStore(notADir)
+	f.Open()
+}
+
+// Test_FileStore_Get_UnreadableFileArchived verifies that, once the store is open, a file that
+// exists but cannot be opened (e.g. written by a different user) is archived and skipped rather
+// than causing a panic that would bring down a long-running client. See issue #720.
+func Test_FileStore_Get_UnreadableFileArchived(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file permission semantics differ on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("test relies on file permissions, which root bypasses")
+	}
+
+	storedir := t.TempDir()
+	f := NewFileStore(storedir)
+	f.Open()
+
+	pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+	pm.Qos = 1
+	pm.TopicName = "a/b/c"
+	pm.Payload = []byte{0xBE, 0xEF, 0xED}
+	pm.MessageID = 42
+	key := outboundKeyFromMID(pm.MessageID)
+	f.Put(key, pm)
+
+	msgPath := storedir + "/o.42.msg"
+	if !exists(msgPath) {
+		t.Fatalf("message was not stored")
+	}
+	// Make the file impossible to open while leaving it present in the directory.
+	if err := os.Chmod(msgPath, 0000); err != nil {
+		t.Fatalf("failed to chmod test file: %v", err)
+	}
+
+	// Get must not panic; it should archive the unreadable file and return nil.
+	var m packets.ControlPacket
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("Get() panicked on an unreadable file: %v", r)
+			}
+		}()
+		m = f.Get(key)
+	}()
+
+	if m != nil {
+		t.Fatal("expected nil for an unreadable message")
+	}
+	if exists(msgPath) {
+		t.Fatal("unreadable message should have been moved out of the store")
+	}
+	if !exists(storedir + "/o.42.CORRUPT") {
+		t.Fatal("unreadable message should have been archived as .CORRUPT")
 	}
 }
 
