@@ -19,6 +19,7 @@
 package mqtt
 
 import (
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -33,6 +34,10 @@ const (
 	msgExt     = ".msg"
 	tmpExt     = ".tmp"
 	corruptExt = ".CORRUPT"
+	// writeTestFile is the name of the temporary file written, read back and removed by Open()
+	// to confirm the store directory is usable. The leading dot and reserved name avoid any
+	// clash with real message files (whose keys have the form "i.<id>"/"o.<id>").
+	writeTestFile = ".paho-write-test" + tmpExt
 )
 
 // FileStore implements the store interface using the filesystem to provide
@@ -88,6 +93,16 @@ func (store *FileStore) Open() {
 		merr := os.MkdirAll(store.directory, perms)
 		chkerr(merr)
 	}
+
+	// Verify that the directory can actually be written to, read from and have files removed.
+	// Doing this once, at startup, means configuration problems (most commonly insufficient
+	// permissions) surface immediately - when they are easy to notice and correct - rather than
+	// later as a panic in the middle of an operation or as silent message loss on a long-running,
+	// unattended client. This mirrors the approach taken by the v5 client. The Store interface
+	// does not allow Open to return an error, so we fail fast by panicking if the directory is
+	// unusable. See https://github.com/eclipse-paho/paho.mqtt.golang/issues/720.
+	verifyReadWrite(store.directory)
+
 	store.opened = true
 	store.logger.Debug("store is opened", slog.String("directory", store.directory), slog.String("component", string(STR)))
 }
@@ -130,7 +145,19 @@ func (store *FileStore) Get(key string) packets.ControlPacket {
 		return nil
 	}
 	mfile, oerr := os.Open(filepath)
-	chkerr(oerr)
+	if oerr != nil {
+		// The file exists but cannot be opened (for example a permissions problem after the file
+		// was written by a different user). Open() verifies the directory is usable at startup, so
+		// treat this as a problem with this individual file: archive it out of the way and carry on
+		// rather than panicking and bringing down a (potentially long-running, unattended) client.
+		// See https://github.com/eclipse-paho/paho.mqtt.golang/issues/720.
+		newpath := corruptpath(store.directory, key)
+		store.logger.Error("failed to open stored message; archiving and skipping", slog.String("error", oerr.Error()), slog.String("archived at", newpath), slog.String("component", string(STR)))
+		if archiveErr := os.Rename(filepath, newpath); archiveErr != nil {
+			store.logger.Error("failed to archive unreadable file", slog.String("error", archiveErr.Error()), slog.String("component", string(STR)))
+		}
+		return nil
+	}
 	msg, rerr := packets.ReadPacket(mfile)
 	chkerr(mfile.Close())
 
@@ -256,6 +283,25 @@ func write(store, key string, m packets.ControlPacket) {
 	chkerr(cerr)
 	rerr := os.Rename(temppath, fullpath(store, key))
 	chkerr(rerr)
+}
+
+// verifyReadWrite confirms that the store directory is usable by writing, reading back and then
+// removing a temporary file. It panics if any of those steps fail. The Store interface does not
+// allow Open to return an error, and failing fast at startup (when an operator is most likely to
+// notice and fix a misconfiguration) is preferable to discovering the problem later, mid-operation,
+// when it may result in lost messages.
+func verifyReadWrite(directory string) {
+	testpath := path.Join(directory, writeTestFile)
+	if err := os.WriteFile(testpath, []byte("test"), 0600); err != nil {
+		panic(fmt.Errorf("file store directory %q is not writable: %w", directory, err))
+	}
+	if _, err := os.ReadFile(testpath); err != nil {
+		_ = os.Remove(testpath) // best effort cleanup
+		panic(fmt.Errorf("file store directory %q is not readable: %w", directory, err))
+	}
+	if err := os.Remove(testpath); err != nil {
+		panic(fmt.Errorf("file store directory %q does not permit file removal: %w", directory, err))
+	}
 }
 
 func exists(file string) bool {
