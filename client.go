@@ -114,6 +114,10 @@ type Client interface {
 	// a new go routine.
 	// callback must be safe for concurrent use by multiple goroutines.
 	AddRoute(topic string, callback MessageHandler)
+	// DeleteRoute removes the handler previously added for the given topic with
+	// AddRoute. It is a no-op if no handler is registered for that exact topic.
+	// Note that this does not unsubscribe; use Unsubscribe for that.
+	DeleteRoute(topic string)
 	// OptionsReader returns a ClientOptionsReader which is a copy of the clientoptions
 	// in use by the client.
 	OptionsReader() ClientOptionsReader
@@ -194,6 +198,13 @@ func (c *client) AddRoute(topic string, callback MessageHandler) {
 	if callback != nil {
 		c.msgRouter.addRoute(topic, callback)
 	}
+}
+
+// DeleteRoute removes the handler previously added for the given topic with
+// AddRoute. It is a no-op if no handler is registered for that exact topic.
+// Note that this does not unsubscribe; use Unsubscribe for that.
+func (c *client) DeleteRoute(topic string) {
+	c.msgRouter.deleteRoute(topic)
 }
 
 // IsConnected returns a bool signifying whether
