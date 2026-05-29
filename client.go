@@ -51,7 +51,7 @@ const maxDuration = 1<<63 - 1
 //
 //		A plain TCP socket (e.g. mqtt://test.mosquitto.org:1833)
 //		A secure SSL/TLS socket (e.g. tls://test.mosquitto.org:8883)
-//		A websocket (e.g ws://test.mosquitto.org:8080 or wss://test.mosquitto.org:8081)
+//		A websocket (e.g. ws://test.mosquitto.org:8080 or wss://test.mosquitto.org:8081)
 //	 Something else (using `options.CustomOpenConnectionFn`)
 //
 // To enable ensured message delivery at Quality of Service (QoS) levels
@@ -69,9 +69,9 @@ type Client interface {
 	// the client is connected or not.
 	IsConnected() bool
 	// IsConnectionOpen return a bool signifying whether the client has an active
-	// connection to mqtt broker, i.e not in disconnected or reconnect mode
+	// connection to mqtt broker, i.e. not in disconnected or reconnect mode
 	IsConnectionOpen() bool
-	// Connect will create a connection to the message broker, by default
+	// Connect will create a connection to the message broker, by default,
 	// it will attempt to connect at v3.1.1 and auto retry at v3.1 if that
 	// fails
 	Connect() Token
@@ -89,7 +89,7 @@ type Client interface {
 	// If options.OrderMatters is true (the default) then callback must not block or
 	// call functions within this package that may block (e.g. Publish) other than in
 	// a new go routine.
-	// callback must be safe for concurrent use by multiple goroutines.
+	// Callback must be safe for concurrent use by multiple goroutines.
 	Subscribe(topic string, qos byte, callback MessageHandler) Token
 	// SubscribeMultiple starts a new subscription for multiple topics. Provide a MessageHandler to
 	// be executed when a message is published on one of the topics provided, or nil for the
@@ -98,27 +98,27 @@ type Client interface {
 	// If options.OrderMatters is true (the default) then callback must not block or
 	// call functions within this package that may block (e.g. Publish) other than in
 	// a new go routine.
-	// callback must be safe for concurrent use by multiple goroutines.
+	// Callback must be safe for concurrent use by multiple goroutines.
 	SubscribeMultiple(filters map[string]byte, callback MessageHandler) Token
 	// Unsubscribe will end the subscription from each of the topics provided.
 	// Messages published to those topics from other clients will no longer be
 	// received.
 	Unsubscribe(topics ...string) Token
 	// AddRoute allows you to add a handler for messages on a specific topic
-	// without making a subscription. For example having a different handler
+	// without making a subscription. For example, having a different handler
 	// for parts of a wildcard subscription or for receiving retained messages
 	// upon connection (before Sub scribe can be processed).
 	//
 	// If options.OrderMatters is true (the default) then callback must not block or
 	// call functions within this package that may block (e.g. Publish) other than in
 	// a new go routine.
-	// callback must be safe for concurrent use by multiple goroutines.
+	// Callback must be safe for concurrent use by multiple goroutines.
 	AddRoute(topic string, callback MessageHandler)
 	// DeleteRoute removes the handler previously added for the given topic with
 	// AddRoute. It is a no-op if no handler is registered for that exact topic.
 	// Note that this does not unsubscribe; use Unsubscribe for that.
 	DeleteRoute(topic string)
-	// OptionsReader returns a ClientOptionsReader which is a copy of the clientoptions
+	// OptionsReader returns a ClientOptionsReader, which is a copy of the clientoptions
 	// in use by the client.
 	OptionsReader() ClientOptionsReader
 }
@@ -129,20 +129,20 @@ type Client interface {
 type client struct {
 	lastSent        atomic.Value // time.Time - the last time a packet was successfully sent to network
 	lastReceived    atomic.Value // time.Time - the last time a packet was successfully received from network
-	pingOutstanding int32        // set to 1 if a ping has been sent but response not ret received
+	pingOutstanding int32        // set to 1 if a ping has been sent, but the response has not yet been received
 
 	status connectionStatus // see constants in status.go for values
 
 	messageIds // effectively a map from message id to token completor
 
 	obound    chan *PacketAndToken // outgoing publish packet
-	oboundP   chan *PacketAndToken // outgoing 'priority' packet (anything other than publish)
+	oboundP   chan *PacketAndToken // outgoing 'priority' packet (anything other than a publish packet)
 	msgRouter *router              // routes topics to handlers
 	persist   Store
 	options   ClientOptions
 	optionsMu sync.Mutex // Protects the options in a few limited cases where needed for testing
 
-	conn   net.Conn   // the network connection, must only be set with connMu locked (only used when starting/stopping workers)
+	conn   net.Conn   // the network connection must only be set with connMu locked (only used when starting/stopping workers)
 	connMu sync.Mutex // mutex for the connection (again only used in two functions)
 
 	stop         chan struct{}  // Closed to request that workers stop
@@ -153,7 +153,7 @@ type client struct {
 	logger  *slog.Logger // logger for the client, set to options.Logger if not nil, otherwise uses slog.Default() logger
 }
 
-// NewClient will create an MQTT v3.1.1 client with all of the options specified
+// NewClient will create an MQTT v3.1.1 client with all the options specified
 // in the provided ClientOptions. The client must have the Connect method called
 // on it before it may be used. This is to make sure resources (such as a net
 // connection) are created before the application is actually ready.
@@ -187,13 +187,13 @@ func NewClient(o *ClientOptions) Client {
 }
 
 // AddRoute allows you to add a handler for messages on a specific topic
-// without making a subscription. For example having a different handler
+// without making a subscription. For example, having a different handler
 // for parts of a wildcard subscription
 //
-// If options.OrderMatters is true (the default) then callback must not block or
+// If options.OrderMatters is true (the default), then callback must not block or
 // call functions within this package that may block (e.g. Publish) other than in
 // a new go routine.
-// callback must be safe for concurrent use by multiple goroutines.
+// Callback must be safe for concurrent use by multiple goroutines.
 func (c *client) AddRoute(topic string, callback MessageHandler) {
 	if callback != nil {
 		c.msgRouter.addRoute(topic, callback)
@@ -238,12 +238,12 @@ func (c *client) IsConnectionOpen() bool {
 // made when the client is not connected to a broker
 var ErrNotConnected = errors.New("not Connected")
 
-// Connect will create a connection to the message broker, by default
+// Connect will create a connection to the message broker. By default,
 // it will attempt to connect at v3.1.1 and auto retry at v3.1 if that
-// fails
-// Note: If using QOS1+ and CleanSession=false it is advisable to add
+// fails.
+// Note: If using QOS1+ and CleanSession=false, then it is advisable to add
 // routes (or a DefaultPublishHandler) prior to calling Connect()
-// because queued messages may be delivered immediately post connection
+// because queued messages may be delivered immediately upon connection
 func (c *client) Connect() Token {
 	t := newToken(packets.Connect).(*ConnectToken)
 	c.logger.Debug("Connect()", slog.String("component", string(CLI)))
@@ -251,7 +251,7 @@ func (c *client) Connect() Token {
 	connectionUp, err := c.status.Connecting()
 	if err != nil {
 		if err == errAlreadyConnectedOrReconnecting && c.options.AutoReconnect {
-			// When reconnection is active we don't consider calls tro Connect to ba an error (mainly for compatability)
+			// When reconnection is active, we don't consider calls to Connect to be an error (mainly for compatability)
 			c.logger.Info("Connect() called but not disconnected", slog.String("component", string(CLI)))
 
 			t.returnCode = packets.Accepted
@@ -330,7 +330,7 @@ func (c *client) Connect() Token {
 }
 
 // internal function used to reconnect the client when it loses its connection
-// The connection status MUST be reconnecting prior to calling this function (via call to status.connectionLost)
+// The connection status MUST be reconnecting before calling this function (via call to status.connectionLost)
 func (c *client) reconnect(connectionUp connCompletedFn) {
 	c.logger.Debug("enter reconnect", slog.String("component", string(CLI)))
 
@@ -339,7 +339,8 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 		conn      net.Conn
 	)
 
-	// If the reason of connection lost is same as the before one, sleep timer is set before attempting connection is started.
+	// To avoid rapid reconnection attempts (due to, for example, and invalid message in the publish queue), the sleep
+	// timer is set before reconnecting.
 	// Sleep time is exponentially increased as the same situation continues
 	if slp, isContinual := c.backoff.sleepWithBackoff("connectionLost", initSleep, c.options.MaxReconnectInterval, 3*time.Second, true); isContinual {
 		c.logger.Debug("Detect continual connection lost after reconnect, slept for", slog.Int("seconds", int(slp.Seconds())), slog.String("component", string(CLI)))
@@ -377,7 +378,7 @@ func (c *client) reconnect(connectionUp connCompletedFn) {
 
 // attemptConnection makes a single attempt to connect to each of the brokers
 // the protocol version to use is passed in (as c.options.ProtocolVersion)
-// Note: Does not set c.conn in order to minimise race conditions
+// Note: Does not set c.conn so that race conditions are minimized
 // Returns:
 // net.Conn - Connected network connection
 // byte - Return code (packets.Accepted indicates a successful connection).
@@ -422,7 +423,7 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 			c.logger.Info("dialer was nil, using default", slog.String("component", string(CLI)))
 			dialer = &net.Dialer{Timeout: connTimeOut}
 		}
-		// Start by opening the network connection (tcp, tls, ws) etc
+		// Start by opening the network connection (tcp, tls, ws) etc.
 		if c.options.CustomOpenConnectionFn != nil {
 			conn, err = c.options.CustomOpenConnectionFn(broker, c.options)
 		} else {
@@ -470,7 +471,7 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 			)
 		}
 	}
-	// If the connection was successful we set member variable and lock in the protocol version for future connection attempts (and users)
+	// If the connection was successful, we set member variable and lock in the protocol version for future connection attempts (and users)
 	if rc == packets.Accepted {
 		c.options.ProtocolVersion = protocolVersion
 		c.options.protocolVersionExplicit = true
@@ -493,7 +494,7 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 // completed.
 // Disconnect can be safely called regardless of connection status.
 // WARNING: `Disconnect` may return before all activities (goroutines) have completed. This means that
-// reusing the `client` may lead to panics. If you want to reconnect when the connection drops then use
+// reusing the `client` may lead to a panic. If you want to reconnect when the connection drops, then use
 // `SetAutoReconnect` and/or `SetConnectRetry`options instead of implementing this yourself.
 func (c *client) Disconnect(quiesce uint) {
 	done := make(chan struct{}) // Simplest way to ensure quiesce is always honoured
@@ -515,15 +516,11 @@ func (c *client) Disconnect(quiesce uint) {
 		dt := newToken(packets.Disconnect)
 		select {
 		case c.oboundP <- &PacketAndToken{p: dm, t: dt}:
-			// wait for work to finish, or quiesce time consumed
+			// wait for work to finish or quiesce time consumed
 			c.logger.Debug("calling WaitTimeout", slog.String("component", string(CLI)))
 
 			dt.WaitTimeout(time.Duration(quiesce) * time.Millisecond)
 			c.logger.Debug("WaitTimeout done", slog.String("component", string(CLI)))
-		// Below code causes a potential data race. Following status refactor it should no longer be required
-		// but leaving in as need to check code further.
-		// case <-c.commsStopped:
-		//           WARN.Println("Disconnect packet could not be sent because comms stopped")
 		case <-time.After(time.Duration(quiesce) * time.Millisecond):
 			c.logger.Info("Disconnect packet not sent due to timeout", slog.String("component", string(CLI)))
 		}
@@ -565,16 +562,16 @@ func (c *client) disconnect() {
 	}
 }
 
-// internalConnLost cleanup when connection is lost or an error occurs
+// internalConnLost cleanup when a connection is lost or an error occurs
 // Note: This function will not block
 func (c *client) internalConnLost(whyConnLost error) {
 	// It is possible that internalConnLost will be called multiple times simultaneously
-	// (including after sending a DisconnectPacket) as such we only do cleanup etc if the
-	// routines were actually running and are not being disconnected at users request
+	// (including after sending a DisconnectPacket) as such we only do cleanup etc. if the
+	// routines were actually running and are not being disconnected at the users' request
 	c.logger.Debug("internalConnLost called", slog.String("component", string(CLI)))
-	// reconnectExpected indicates whether we anticipate transitioning into a reconnect. When AutoReconnect is
-	// disabled (or we were not fully connected) the connection lost handler will return a nil reconnect function
-	// and that is the expected behaviour (rather than a bug).
+	// The status handler needs to know whether we will attempt to reconnect. When AutoReconnect is
+	// disabled (or we were not fully connected), the connection lost handler will return a nil reconnect function
+	// (that is the expected behaviour rather than a bug).
 	reconnectExpected := c.options.AutoReconnect && c.status.ConnectionStatus() > connecting
 	disDone, err := c.status.ConnectionLost(reconnectExpected)
 	if err != nil {
@@ -590,7 +587,7 @@ func (c *client) internalConnLost(whyConnLost error) {
 	stopDone := c.stopCommsWorkers()
 	// stopDone was required in previous versions because there was no connectionLost status (and there were
 	// issues with status handling). This code has been left in place for the time being just in case the new
-	// status handling contains bugs (refactoring required at some point).
+	// status handling contains bugs (refactoring is required at some point).
 	if stopDone == nil { // stopDone will be nil if workers already in the process of stopping or stopped
 		c.logger.Error("internalConnLost stopDone unexpectedly nil - BUG BUG", slog.String("component", string(CLI)))
 		// Cannot really do anything other than leave things disconnected
@@ -600,7 +597,7 @@ func (c *client) internalConnLost(whyConnLost error) {
 		return
 	}
 
-	// It may take a while for the disconnection to complete whatever called us needs to exit cleanly so finnish in goRoutine
+	// It may take a while for the disconnection to complete whatever called us needs to exit cleanly so finish in goRoutine
 	go func() {
 		c.logger.Debug("internalConnLost waiting on workers", slog.String("component", string(CLI)))
 		<-stopDone
@@ -609,7 +606,7 @@ func (c *client) internalConnLost(whyConnLost error) {
 		reConnDone, err := disDone(true)
 		if err != nil {
 			c.logger.Error("failure whilst reporting completion of disconnect", slog.Any("error", err), slog.String("component", string(CLI)))
-		} else if reConnDone == nil && reconnectExpected { // Should never happen (a reconnect was expected but no reconnect function was returned)
+		} else if reConnDone == nil && reconnectExpected { // Should never happen (reconnect was expected but no reconnect function was returned)
 			c.logger.Error("BUG BUG BUG reconnection function is nil", slog.Any("error", err), slog.String("component", string(CLI)))
 		}
 
@@ -661,7 +658,7 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 	}
 
 	// matchAndDispatch will process messages received from the network. It may generate acknowledgements
-	// It will complete when incomingPubChan is closed and will close ackOut prior to exiting
+	// It will complete when incomingPubChan is closed and will close ackOut before exiting
 	incomingPubChan := make(chan *packets.PublishPacket)
 	c.workers.Add(1) // Done will be called when ackOut is closed
 	ackOut := c.msgRouter.matchAndDispatch(incomingPubChan, c.options.Order, c)
@@ -683,8 +680,8 @@ func (c *client) startCommsWorkers(conn net.Conn, connectionUp connCompletedFn, 
 	}
 
 	// c.oboundP and c.obound need to stay active for the life of the client because, depending upon the options,
-	// messages may be published while the client is disconnected (they will block unless in a goroutine). However
-	// to keep the comms routines clean we want to shutdown the input messages it uses so create out own channels
+	// messages may be published while the client is disconnected (they will block unless in a goroutine). However,
+	// to keep the comms routines clean, we want to shut down the input messages it uses so create out own channels
 	// and copy data across.
 	commsobound := make(chan *PacketAndToken)  // outgoing publish packets
 	commsoboundP := make(chan *PacketAndToken) // outgoing 'priority' packet
@@ -783,16 +780,16 @@ func (c *client) stopCommsWorkers() chan struct{} {
 	}
 
 	// It is important that everything is stopped in the correct order to avoid deadlocks. The main issue here is
-	// the router because it both receives incoming publish messages and also sends outgoing acknowledgements. To
-	// avoid issues we signal the workers to stop and close the connection (it is probably already closed but
-	// there is no harm in being sure). We can then wait for the workers to finnish before closing outbound comms
+	// the router because it both receives incoming publish messages, and also sends outgoing acknowledgements. To
+	// avoid issues, we signal the workers to stop and close the connection (it is probably already closed, but
+	// there is no harm in being sure). We can then wait for the workers to finish before closing outbound comms
 	// channels which will allow the comms routines to exit.
 
-	// We stop all non-comms related workers first (ping, keepalive, errwatch, resume etc) so they don't get blocked waiting on comms
+	// We stop all non-comms related workers first (ping, keepalive, errwatch, resume, etc.), so they don't get blocked waiting on comms
 	close(c.stop)     // Signal for workers to stop
 	c.conn.Close()    // Possible that this is already closed but no harm in closing again
 	c.conn = nil      // Important that this is the only place that this is set to nil
-	c.connMu.Unlock() // As the connection is now nil we can unlock the mu (allowing subsequent calls to exit immediately)
+	c.connMu.Unlock() // As the connection is now nil, we can unlock the mu (allowing later calls to exit immediately)
 
 	doneChan := make(chan struct{})
 
@@ -880,10 +877,10 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 // Subscribe starts a new subscription. Provide a MessageHandler to be executed when
 // a message is published on the topic provided.
 //
-// If options.OrderMatters is true (the default) then callback must not block or
+// If options.OrderMatters is true (the default), then callback must not block or
 // call functions within this package that may block (e.g. Publish) other than in
 // a new go routine.
-// callback must be safe for concurrent use by multiple goroutines.
+// Callback must be safe for concurrent use by multiple goroutines.
 func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Token {
 	token := newToken(packets.Subscribe).(*SubscribeToken)
 	c.logger.Debug("enter Subscribe", slog.String("component", string(CLI)))
@@ -894,11 +891,11 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 	if !c.IsConnectionOpen() {
 		switch {
 		case !c.options.ResumeSubs:
-			// if not connected and resumeSubs not set this sub will be thrown away
+			// if not connected and resumeSubs not set, this sub will be thrown away
 			token.setError(fmt.Errorf("not currently connected and ResumeSubs not set"))
 			return token
 		case c.options.CleanSession && c.status.ConnectionStatus() == reconnecting:
-			// if reconnecting and cleanSession is true this sub will be thrown away
+			// if reconnecting and cleanSession is true, this sub will be thrown away
 			token.setError(fmt.Errorf("reconnecting state and cleansession is true"))
 			return token
 		}
@@ -966,7 +963,7 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 // If options.OrderMatters is true (the default) then callback must not block or
 // call functions within this package that may block (e.g. Publish) other than in
 // a new go routine.
-// callback must be safe for concurrent use by multiple goroutines.
+// Callback must be safe for concurrent use by multiple goroutines.
 func (c *client) SubscribeMultiple(filters map[string]byte, callback MessageHandler) Token {
 	var err error
 	token := newToken(packets.Subscribe).(*SubscribeToken)
@@ -978,11 +975,11 @@ func (c *client) SubscribeMultiple(filters map[string]byte, callback MessageHand
 	if !c.IsConnectionOpen() {
 		switch {
 		case !c.options.ResumeSubs:
-			// if not connected and resumesubs not set this sub will be thrown away
+			// if not connected and resumesubs not set, this sub will be thrown away
 			token.setError(fmt.Errorf("not currently connected and ResumeSubs not set"))
 			return token
 		case c.options.CleanSession && c.status.ConnectionStatus() == reconnecting:
-			// if reconnecting and cleanSession is true this sub will be thrown away
+			// if reconnecting and cleanSession is true, this sub will be thrown away
 			token.setError(fmt.Errorf("reconnecting state and cleansession is true"))
 			return token
 		}
@@ -1066,7 +1063,7 @@ func (c *client) reserveStoredPublishIDs() {
 func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 	c.logger.Debug("enter Resume", slog.String("component", string(STR)))
 
-	// Prior to sending a message getSemaphore will be called and once sent releaseSemaphore will be called
+	// Before sending a message, getSemaphore will be called, and once sent releaseSemaphore will be called
 	// with the token (so semaphore can be released when ACK received if applicable).
 	// Using a weighted semaphore rather than channels because this retains ordering
 	getSemaphore := func() {}                    // Default = do nothing
@@ -1079,7 +1076,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 
 		go func() {
 			select {
-			case <-c.stop: // Request to stop (due to comm error etc)
+			case <-c.stop: // Request to stop (due to comm error etc.)
 				cancel()
 			case <-ctx.Done(): // resume completed normally
 			}
@@ -1122,7 +1119,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 						return
 					}
 				} else {
-					c.persist.Del(key) // Unsubscribe packets should not be retained following a reconnect
+					c.persist.Del(key) // Unsubscribe packets should not be retained following a reconnection
 				}
 			case *packets.UnsubscribePacket:
 				if subscription {
@@ -1135,7 +1132,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 						return
 					}
 				} else {
-					c.persist.Del(key) // Unsubscribe packets should not be retained following a reconnect
+					c.persist.Del(key) // Unsubscribe packets should not be retained following a reconnection
 				}
 			case *packets.PubrelPacket:
 				c.logger.Debug(fmt.Sprintf("loaded pending pubrel (%d)", details.MessageID), slog.String("component", string(STR)))
@@ -1150,8 +1147,8 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 				// Server has attempted to send this MQTT PUBLISH Packet. If the DUP flag is set to 1, it indicates that
 				// this might be re-delivery of an earlier attempt to send the Packet.
 				//
-				// If the message is in the store than an attempt at delivery has been made (note that the message may
-				// never have made it onto the wire but tracking that would be complicated!).
+				// If the message is in the store, then an attempt at delivery has been made (note that the message may
+				// never have made it onto the wire, but tracking that would be complicated!).
 				if p.Qos != 0 { // spec: The DUP flag MUST be set to 0 for all QoS 0 messages
 					p.Dup = true
 				}
@@ -1167,7 +1164,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 					c.logger.Debug("resume exiting due to stop", slog.String("component", string(STR)))
 					return
 				}
-				releaseSemaphore(token) // If limiting simultaneous messages then we need to know when message is acknowledged
+				releaseSemaphore(token) // If limiting simultaneous messages, then we need to know when message is acknowledged
 			default:
 				c.logger.Error("invalid message type in store (discarded)",
 					slog.String("type", fmt.Sprintf("%T", packet)),
@@ -1178,7 +1175,7 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 		} else {
 			switch packet.(type) {
 			case *packets.PubrelPacket:
-				c.logger.Debug("loaded pending incomming", slog.String("messageID", fmt.Sprintf("%d", details.MessageID)), slog.String("component", string(STR)))
+				c.logger.Debug("loaded pending incoming", slog.String("messageID", fmt.Sprintf("%d", details.MessageID)), slog.String("component", string(STR)))
 				select {
 				case ibound <- packet:
 				case <-c.stop:
@@ -1210,11 +1207,11 @@ func (c *client) Unsubscribe(topics ...string) Token {
 	if !c.IsConnectionOpen() {
 		switch {
 		case !c.options.ResumeSubs:
-			// if not connected and resumeSubs not set this unsub will be thrown away
+			// if not connected and resumeSubs not set, then this unsub will be thrown away
 			token.setError(fmt.Errorf("not currently connected and ResumeSubs not set"))
 			return token
 		case c.options.CleanSession && c.status.ConnectionStatus() == reconnecting:
-			// if reconnecting and cleanSession is true this unsub will be thrown away
+			// if reconnecting and cleanSession is true, then this unsub will be thrown away
 			token.setError(fmt.Errorf("reconnecting state and cleansession is true"))
 			return token
 		}
