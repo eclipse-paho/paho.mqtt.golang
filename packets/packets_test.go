@@ -18,6 +18,8 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -269,4 +271,121 @@ func TestEncoding(t *testing.T) {
 		t.Errorf("encodeBytes did not truncate overlength data (expected len 65538, received %d", len(res))
 	}
 
+}
+
+// isCopy checks if the original and copy are the same, recursively.
+// It will fail the test if the values are different or if the pointer
+// of the original and copy are the same.
+func isCopy(t *testing.T, original, copy any, fieldName ...string) {
+	t.Helper()
+
+	log := func(field string, original, copy interface{}) {
+		t.Logf("Field: %s", field)
+		t.Logf("Original: %#v", original)
+		t.Logf("Copy: %#v", copy)
+	}
+
+	originalValue := reflect.ValueOf(original)
+	copyValue := reflect.ValueOf(copy)
+
+	fullFieldName := ""
+	if len(fieldName) > 0 {
+		fullFieldName = fieldName[0]
+		for _, name := range fieldName[1:] {
+			fullFieldName += "." + name
+		}
+	}
+
+	if originalValue.Kind() != copyValue.Kind() {
+		log(fullFieldName, original, copy)
+		t.Errorf("Kind of original and copy are different: %s != %s", originalValue.Kind(), copyValue.Kind())
+	}
+
+	switch originalValue.Kind() {
+	case reflect.Ptr:
+		if originalValue.Pointer() == copyValue.Pointer() {
+			log(fullFieldName, original, copy)
+			t.Errorf("Pointer of original and copy are the same: %x == %x", originalValue.Pointer(), copyValue.Pointer())
+		}
+		isCopy(t, originalValue.Elem().Interface(), copyValue.Elem().Interface(), append(fieldName, originalValue.Type().Elem().Name())...)
+	case reflect.Slice:
+		if originalValue.IsNil() && copyValue.IsNil() {
+			return
+		}
+		if originalValue.IsNil() != copyValue.IsNil() {
+			log(fullFieldName, original, copy)
+			t.Errorf("IsNil of original and copy are different: %t != %t", originalValue.IsNil(), copyValue.IsNil())
+		}
+		if originalValue.Len() != copyValue.Len() {
+			log(fullFieldName, original, copy)
+			t.Errorf("Length of original and copy are different: %d != %d", originalValue.Len(), copyValue.Len())
+		}
+		if originalValue.Len() > 0 && originalValue.Pointer() == copyValue.Pointer() {
+			log(fullFieldName, original, copy)
+			t.Errorf("Pointer of original and copy are the same: %x == %x", originalValue.Pointer(), copyValue.Pointer())
+		}
+		for i := 0; i < originalValue.Len(); i++ {
+			isCopy(t, originalValue.Index(i).Interface(), copyValue.Index(i).Interface(), append(fieldName, fmt.Sprintf("[%d]", i))...)
+		}
+	case reflect.Struct:
+		for i := 0; i < originalValue.Type().NumField(); i++ {
+			field := originalValue.Type().Field(i)
+			isCopy(t, originalValue.Field(i).Interface(), copyValue.Field(i).Interface(), append(fieldName, field.Name)...)
+		}
+	default:
+		if !reflect.DeepEqual(originalValue.Interface(), copyValue.Interface()) {
+			log(fullFieldName, original, copy)
+			t.Errorf("Values of original and copy are different: %v != %v", originalValue.Interface(), copyValue.Interface())
+		}
+	}
+}
+
+// createValidPointers creates valid pointer for map, slices or normal pointer if they are nil.
+func createValidPointers(s any) {
+	val := reflect.ValueOf(s).Elem()
+	for i := range val.NumField() {
+		field := val.Field(i)
+		switch field.Kind() {
+		case reflect.Ptr:
+			if field.IsNil() {
+				field.Set(reflect.New(field.Type().Elem()))
+			}
+		case reflect.Slice:
+			if field.IsNil() {
+				field.Set(reflect.MakeSlice(field.Type(), 1, 1))
+			}
+		case reflect.Map:
+			if field.IsNil() {
+				field.Set(reflect.MakeMap(field.Type()))
+			}
+		case reflect.Struct:
+			createValidPointers(field.Addr().Interface())
+		}
+	}
+}
+
+func TestPacketCopy(t *testing.T) {
+	packets := []ControlPacket{
+		NewControlPacket(Connack).(*ConnackPacket),
+		NewControlPacket(Connect).(*ConnectPacket),
+		NewControlPacket(Disconnect).(*DisconnectPacket),
+		NewControlPacket(Pingreq).(*PingreqPacket),
+		NewControlPacket(Pingresp).(*PingrespPacket),
+		NewControlPacket(Puback).(*PubackPacket),
+		NewControlPacket(Pubcomp).(*PubcompPacket),
+		NewControlPacket(Publish).(*PublishPacket),
+		NewControlPacket(Pubrec).(*PubrecPacket),
+		NewControlPacket(Pubrel).(*PubrelPacket),
+		NewControlPacket(Suback).(*SubackPacket),
+		NewControlPacket(Subscribe).(*SubscribePacket),
+		NewControlPacket(Unsuback).(*UnsubackPacket),
+		NewControlPacket(Unsubscribe).(*UnsubscribePacket),
+	}
+
+	for _, packet := range packets {
+		createValidPointers(packet)
+		copy := packet.Copy()
+
+		isCopy(t, packet, copy)
+	}
 }

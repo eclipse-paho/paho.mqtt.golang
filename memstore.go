@@ -81,7 +81,7 @@ func (store *MemoryStore) Put(key string, message packets.ControlPacket) {
 }
 
 // Get takes a key and looks in the store for a matching Message
-// returning either the Message pointer or nil.
+// returning either a copy of the Message as packets.ControlPacket or nil.
 func (store *MemoryStore) Get(key string) packets.ControlPacket {
 	store.RLock()
 	defer store.RUnlock()
@@ -93,10 +93,12 @@ func (store *MemoryStore) Get(key string) packets.ControlPacket {
 	m := store.messages[key]
 	if m == nil {
 		store.logger.Warn("memorystore get: message not found", slog.Uint64("messageID", uint64(mid)), slog.String("component", string(STR)))
-	} else {
-		store.logger.Debug("memorystore get: message found", slog.Uint64("messageID", uint64(mid)), slog.String("component", string(STR)))
+		return m
 	}
-	return m
+
+	store.logger.Debug("memorystore get: message found", slog.Uint64("messageID", uint64(mid)), slog.String("component", string(STR)))
+
+	return m.Copy()
 }
 
 // All returns a slice of strings containing all the keys currently

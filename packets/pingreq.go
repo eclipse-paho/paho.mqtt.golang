@@ -51,3 +51,12 @@ func (pr *PingreqPacket) Unpack(b io.Reader) error {
 func (pr *PingreqPacket) Details() Details {
 	return Details{Qos: 0, MessageID: 0}
 }
+
+// Copy creates a deep copy of the PingreqPacket
+func (pr *PingreqPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Pingreq).(*PingreqPacket)
+
+	*cp = *pr
+
+	return cp
+}

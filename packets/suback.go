@@ -74,3 +74,17 @@ func (sa *SubackPacket) Unpack(b io.Reader) error {
 func (sa *SubackPacket) Details() Details {
 	return Details{Qos: 0, MessageID: sa.MessageID}
 }
+
+// Copy creates a deep copy of the SubackPacket
+func (sa *SubackPacket) Copy() ControlPacket {
+	cp := NewControlPacket(Suback).(*SubackPacket)
+
+	*cp = *sa
+
+	if len(sa.ReturnCodes) > 0 {
+		cp.ReturnCodes = make([]byte, len(sa.ReturnCodes))
+		copy(cp.ReturnCodes, sa.ReturnCodes)
+	}
+
+	return cp
+}
