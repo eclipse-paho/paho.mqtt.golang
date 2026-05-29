@@ -74,6 +74,27 @@ func Test_DeleteRoute_Wildcards(t *testing.T) {
 	}
 }
 
+// Test_Client_AddDeleteRoute exercises the public Client.AddRoute / DeleteRoute API
+// added for issue #331: a route registered through the client can be removed again,
+// and deleting an unknown topic is a no-op.
+func Test_Client_AddDeleteRoute(t *testing.T) {
+	c := NewClient(NewClientOptions()).(*client)
+	cb := func(client Client, msg Message) {}
+
+	c.AddRoute("topic/a", cb)
+	if c.msgRouter.routes.Len() != 1 {
+		t.Fatalf("expected 1 route after AddRoute, got %d", c.msgRouter.routes.Len())
+	}
+
+	c.DeleteRoute("topic/a")
+	if c.msgRouter.routes.Len() != 0 {
+		t.Fatalf("expected 0 routes after DeleteRoute, got %d", c.msgRouter.routes.Len())
+	}
+
+	// Deleting a topic with no registered handler must be a no-op (and not panic).
+	c.DeleteRoute("topic/does-not-exist")
+}
+
 func Test_Match(t *testing.T) {
 	router := newRouter(noopSLogger)
 	router.addRoute("/alpha", nil)
