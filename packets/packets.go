@@ -307,7 +307,7 @@ func decodeByte(b io.Reader) (byte, error) {
 
 func decodeUint16(b io.Reader) (uint16, error) {
 	num := make([]byte, 2)
-	_, err := b.Read(num)
+	_, err := io.ReadFull(b, num)
 	if err != nil {
 		return 0, err
 	}

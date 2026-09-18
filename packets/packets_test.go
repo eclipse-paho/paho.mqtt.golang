@@ -19,7 +19,9 @@ package packets
 import (
 	"bytes"
 	"errors"
+	"io"
 	"testing"
+	"testing/iotest"
 )
 
 func TestPacketNames(t *testing.T) {
@@ -199,6 +201,37 @@ func TestReadPacketWithLimitAcceptsPacketWithinLimit(t *testing.T) {
 	}
 }
 
+func TestReadPacketMessageID(t *testing.T) {
+	for _, header := range []byte{0x40, 0x50, 0x62, 0x70, 0x90, 0xb0} {
+		t.Run(PacketNames[header>>4], func(t *testing.T) {
+			t.Run("truncated", func(t *testing.T) {
+				// The body matches Remaining Length, but cannot contain a full Message ID.
+				_, err := ReadPacket(bytes.NewReader([]byte{header, 0x01, 0x02}))
+				if !errors.Is(err, io.ErrUnexpectedEOF) {
+					t.Fatalf("expected io.ErrUnexpectedEOF, got %v", err)
+				}
+			})
+			t.Run("complete", func(t *testing.T) {
+				wire := []byte{header, 0x02, 0x12, 0x34}
+				if header>>4 == Suback {
+					wire[1]++
+					wire = append(wire, 0x02)
+				}
+				packet, err := ReadPacket(bytes.NewReader(wire))
+				if err != nil {
+					t.Fatalf("error reading complete packet: %v", err)
+				}
+				if got := packet.Details().MessageID; got != 0x1234 {
+					t.Errorf("Message ID = %#x, want 0x1234", got)
+				}
+				if sa, ok := packet.(*SubackPacket); ok && !bytes.Equal(sa.ReturnCodes, []byte{0x02}) {
+					t.Errorf("return codes = %v, want [2]", sa.ReturnCodes)
+				}
+			})
+		})
+	}
+}
+
 func TestPackUnpackControlPackets(t *testing.T) {
 	packets := []ControlPacket{
 		NewControlPacket(Connect).(*ConnectPacket),
@@ -229,6 +262,33 @@ func TestPackUnpackControlPackets(t *testing.T) {
 		if read.String() != packet.String() {
 			t.Errorf("Read of packed %T did not equal original.\nExpected: %v\n     Got: %v", packet, packet, read)
 		}
+	}
+}
+
+func TestDecodeUint16(t *testing.T) {
+	readErr := errors.New("read failed")
+	for _, tt := range []struct {
+		name    string
+		reader  io.Reader
+		want    uint16
+		wantErr error
+	}{
+		{name: "complete", reader: bytes.NewReader([]byte{0x12, 0x34}), want: 0x1234},
+		{name: "fragmented", reader: iotest.OneByteReader(bytes.NewReader([]byte{0x12, 0x34})), want: 0x1234},
+		{name: "complete with EOF", reader: iotest.DataErrReader(bytes.NewReader([]byte{0x12, 0x34})), want: 0x1234},
+		{name: "empty", reader: bytes.NewReader(nil), wantErr: io.EOF},
+		{name: "truncated", reader: bytes.NewReader([]byte{0x12}), wantErr: io.ErrUnexpectedEOF},
+		{name: "read error", reader: iotest.ErrReader(readErr), wantErr: readErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := decodeUint16(tt.reader)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("value = %#x, want %#x", got, tt.want)
+			}
+		})
 	}
 }
 
