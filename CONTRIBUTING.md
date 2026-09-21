@@ -18,12 +18,15 @@ Information regarding source code management, builds, coding standards, and more
 
 - https://projects.eclipse.org/projects/technology.paho/developer
 
-Contributor License Agreement:
-------------------------------
+Eclipse Contributor Agreement:
 
-Before your contribution can be accepted by the project, you need to create and electronically sign the Eclipse Foundation Contributor License Agreement (CLA).
+In order to be able to contribute to Eclipse Foundation projects you must electronically sign the Eclipse Contributor Agreement (ECA).
 
-- http://www.eclipse.org/legal/CLA.php
+    https://www.eclipse.org/legal/eca/
+
+The ECA provides the Eclipse Foundation with a permanent record that you agree that each of your contributions will comply with the commitments documented in the Developer Certificate of Origin (DCO). Having an ECA on file associated with the email address matching the "Author" field of your contribution's Git commits fulfills the DCO's requirement that you sign-off on your contributions.
+
+For more information, please see the Eclipse Committer Handbook: https://www.eclipse.org/projects/handbook/#resources-commit
 
 Contributing Code:
 ------------------
