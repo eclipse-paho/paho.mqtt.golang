@@ -6,17 +6,14 @@ Thanks for your interest in this project.
 Project description:
 --------------------
 
-The Paho project has been created to provide scalable open-source implementations of open and standard messaging protocols aimed at new, existing, and emerging applications for Machine-to-Machine (M2M) and Internet of Things (IoT).
-Paho reflects the inherent physical and cost constraints of device connectivity. Its objectives include effective levels of decoupling between devices and applications, designed to keep markets open and encourage the rapid growth of scalable Web and Enterprise middleware and applications. Paho is being kicked off with MQTT publish/subscribe client implementations for use on embedded platforms, along with corresponding server support as determined by the community.
+The Eclipse Paho project provides reliable open-source implementations of open and standard messaging protocols aimed at new, existing, and emerging applications for Machine-to-Machine (M2M) and Internet of Things (IoT).
+
+Paho reflects the inherent physical and cost constraints of device connectivity. Its objectives include effective levels of decoupling between devices and applications, designed to keep markets open and encourage the rapid growth of scalable Web and Enterprise middleware and applications. Paho contains MQTT publish/subscribe client implementations for use on embedded platforms, along with corresponding server support as determined by the community.
 
 - https://projects.eclipse.org/projects/technology.paho
 
 Developer resources:
 --------------------
-
-Information regarding source code management, builds, coding standards, and more.
-
-- https://projects.eclipse.org/projects/technology.paho/developer
 
 Eclipse Contributor Agreement:
 
@@ -31,7 +28,7 @@ For more information, please see the Eclipse Committer Handbook: https://www.ecl
 Contributing Code:
 ------------------
 
-The Go client is developed in Github, see their documentation on the process of forking and pull requests; https://help.github.com/categories/collaborating-on-projects-using-pull-requests/
+The Go client is developed in Github, see their documentation on the process of forking and pull requests; [introduction to github](https://github.com/skills/introduction-to-github)
 
 Git commit messages should follow the style described here;
 
