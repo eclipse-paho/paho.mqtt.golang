@@ -16,7 +16,9 @@ package mqtt
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"reflect"
 	"testing"
 	"time"
 
@@ -57,106 +59,161 @@ func Test_startIncomingComms_rejectsOversizedPacket(t *testing.T) {
 	}
 }
 
-// Check that the library handles a case where a malicious server sends a SUBACK packet with a different number of return codes than
-// the matching SUBSCRIBE requested subscriptions.
-// See [MQTT-3.8.4-5] in the spec for the relevant rule.
-func Test_startIncomingComms_subackReturnCodeSubscriptionMismatch(t *testing.T) {
+// SUBACKs must contain one valid return code per subscription, with failure
+// (0x80) supported only by MQTT 3.1.1 (including its bridge mode).
+func Test_startIncomingComms_subackReturnCodes(t *testing.T) {
 	const messageID = 1
 
-	cases := []struct {
+	type testCase struct {
+		name          string
 		subs          []string
 		returnCodes   []byte
 		expectedError bool
-	}{
+		dummyToken    bool
+	}
+	cases := []testCase{
 		{
+			name:          "qos0",
 			subs:          []string{"topic/a"},
 			returnCodes:   []byte{0},
 			expectedError: false,
 		},
 		{
+			name:          "multiple",
 			subs:          []string{"topic/a", "topic/b"},
 			returnCodes:   []byte{0, 0},
 			expectedError: false,
 		},
 		{
+			name:          "too_many",
 			subs:          []string{"topic/a"},
 			returnCodes:   []byte{0, 1},
 			expectedError: true,
 		},
 		{
+			name:          "too_few",
 			subs:          []string{"topic/a", "topic/b"},
 			returnCodes:   []byte{0},
 			expectedError: true,
 		},
 		{
+			name:          "empty",
 			subs:          []string{"topic/a"},
 			returnCodes:   []byte{},
 			expectedError: true,
 		},
+		{name: "qos1", subs: []string{"topic/a"}, returnCodes: []byte{1}},
+		{name: "qos2", subs: []string{"topic/a"}, returnCodes: []byte{2}},
+		{name: "denied", subs: []string{"topic/a"}, returnCodes: []byte{0x80}},
+		{name: "mixed_valid", subs: []string{"topic/a", "topic/b", "topic/c", "topic/d"}, returnCodes: []byte{0, 1, 2, 0x80}},
+		{name: "invalid_first", subs: []string{"topic/a", "topic/b"}, returnCodes: []byte{0xfe, 1}, expectedError: true},
+		{name: "invalid_middle", subs: []string{"topic/a", "topic/b", "topic/c"}, returnCodes: []byte{0, 0xfe, 2}, expectedError: true},
+		{name: "invalid_last", subs: []string{"topic/a", "topic/b"}, returnCodes: []byte{0, 0xfe}, expectedError: true},
+		{name: "unknown_id_valid", returnCodes: []byte{2}, dummyToken: true},
+		{name: "unknown_id_invalid", returnCodes: []byte{0xfe}, expectedError: true, dummyToken: true},
+	}
+	for _, code := range []byte{3, 4, 0x7f, 0x81, 0xfe, 0xff} {
+		cases = append(cases, testCase{
+			name: fmt.Sprintf("reserved_%02x", code), subs: []string{"topic/a"},
+			returnCodes: []byte{code}, expectedError: true,
+		})
 	}
 
-	for _, c := range cases {
-		// Set the topics requested in the matching SUBSCRIBE.
-		token := newToken(packets.Subscribe).(*SubscribeToken)
-		token.subs = c.subs
-
-		// Build the SUBACK to process.
-		suback := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
-		suback.MessageID = messageID
-		suback.ReturnCodes = c.returnCodes
-		var conn bytes.Buffer
-		if err := suback.Write(&conn); err != nil {
-			t.Fatalf("failed to write suback: %v", err)
-		}
-
-		inboundFromStore := make(chan packets.ControlPacket) // Store unused in this test
-		close(inboundFromStore)
-
-		// Start the incoming processor, the SUBACK is already on conn
-		output := startIncomingComms(&conn, &testCommsFns{token: token}, inboundFromStore, noopSLogger)
-
-		// Regardless of the result, the token should be done
-		select {
-		case <-token.Done():
-		case <-time.After(time.Second):
-			t.Fatalf("subscribe token was not completed")
-		}
-
-		// capture everything from the channel to ensure it's fully drained
-		var received []incomingComms
-	drainOutput:
-		for {
-			select {
-			case msg, ok := <-output:
-				if !ok {
-					break drainOutput
+	for _, protocolVersion := range []uint{3, 4, 0x83, 0x84} {
+		for _, c := range cases {
+			t.Run(fmt.Sprintf("protocol_%02x/%s", protocolVersion, c.name), func(t *testing.T) {
+				expectedError := c.expectedError
+				if protocolVersion == 3 || protocolVersion == 0x83 {
+					for _, code := range c.returnCodes {
+						if code == 0x80 {
+							expectedError = true
+						}
+					}
 				}
-				received = append(received, msg)
-			case <-time.After(time.Second):
-				t.Fatalf("startIncomingComms did not complete")
-			}
-		}
+				// Set the topics requested in the matching SUBSCRIBE.
+				token := newToken(packets.Subscribe).(*SubscribeToken)
+				token.subs = c.subs
 
-		if c.expectedError {
-			malformedSubackErrors := 0
-			for _, msg := range received {
-				if errors.Is(msg.err, ErrMalformedSuback) {
-					malformedSubackErrors++
+				// Build the SUBACK to process.
+				suback := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
+				suback.MessageID = messageID
+				suback.ReturnCodes = c.returnCodes
+				var conn bytes.Buffer
+				if err := suback.Write(&conn); err != nil {
+					t.Fatalf("failed to write suback: %v", err)
 				}
-			}
-			if malformedSubackErrors != 1 {
-				t.Errorf("expected ErrMalformedSuback once on chan (sub: %v, codes: %v), got %d in %v", c.subs, c.returnCodes, malformedSubackErrors, received)
-			}
-			if !errors.Is(token.Error(), ErrMalformedSuback) {
-				t.Errorf("expected ErrMalformedSuback (sub: %v, codes: %v), got %v", c.subs, c.returnCodes, token.Error())
-			}
-		} else {
-			if len(received) != 1 || !errors.Is(received[0].err, io.EOF) {
-				t.Errorf("expected normal closure, got %v", received)
-			}
-			if token.Error() != nil {
-				t.Errorf("expected successful SUBACK (sub: %v, codes: %v), got %v", c.subs, c.returnCodes, token.Error())
-			}
+
+				inboundFromStore := make(chan packets.ControlPacket) // Store unused in this test
+				close(inboundFromStore)
+
+				// Start the incoming processor, the SUBACK is already on conn
+				comms := &testCommsFns{token: token, protocolVersion: protocolVersion}
+				if c.dummyToken {
+					comms.token = &DummyToken{}
+				}
+				output := startIncomingComms(&conn, comms, inboundFromStore, noopSLogger)
+
+				// Regardless of the result, the token should be done
+				if !c.dummyToken {
+					select {
+					case <-token.Done():
+					case <-time.After(time.Second):
+						t.Fatalf("subscribe token was not completed")
+					}
+				}
+
+				// capture everything from the channel to ensure it's fully drained
+				var received []incomingComms
+			drainOutput:
+				for {
+					select {
+					case msg, ok := <-output:
+						if !ok {
+							break drainOutput
+						}
+						received = append(received, msg)
+					case <-time.After(time.Second):
+						t.Fatalf("startIncomingComms did not complete")
+					}
+				}
+
+				if !reflect.DeepEqual(comms.freedIDs, []uint16{messageID}) {
+					t.Errorf("expected message ID to be freed once, got %v", comms.freedIDs)
+				}
+				if expectedError {
+					malformedSubackErrors := 0
+					for _, msg := range received {
+						if errors.Is(msg.err, ErrMalformedSuback) {
+							malformedSubackErrors++
+						}
+					}
+					if malformedSubackErrors != 1 {
+						t.Errorf("expected ErrMalformedSuback once on chan (sub: %v, codes: %v), got %d in %v", c.subs, c.returnCodes, malformedSubackErrors, received)
+					}
+					if !c.dummyToken && !errors.Is(token.Error(), ErrMalformedSuback) {
+						t.Errorf("expected ErrMalformedSuback (sub: %v, codes: %v), got %v", c.subs, c.returnCodes, token.Error())
+					}
+					if len(token.Result()) != 0 {
+						t.Errorf("malformed SUBACK populated results: %v", token.Result())
+					}
+				} else {
+					if len(received) != 1 || !errors.Is(received[0].err, io.EOF) {
+						t.Errorf("expected normal closure, got %v", received)
+					}
+					if token.Error() != nil {
+						t.Errorf("expected successful SUBACK (sub: %v, codes: %v), got %v", c.subs, c.returnCodes, token.Error())
+					}
+					if !c.dummyToken {
+						want := make(map[string]byte, len(c.subs))
+						for i, topic := range c.subs {
+							want[topic] = c.returnCodes[i]
+						}
+						if !reflect.DeepEqual(token.Result(), want) {
+							t.Errorf("expected results %v, got %v", want, token.Result())
+						}
+					}
+				}
+			})
 		}
 	}
 }
@@ -165,13 +222,17 @@ func Test_startIncomingComms_subackReturnCodeSubscriptionMismatch(t *testing.T) 
 type testCommsFns struct {
 	token                 tokenCompletor
 	maxIncomingPacketSize uint32
+	protocolVersion       uint
+	freedIDs              []uint16
 }
 
 func (c *testCommsFns) getToken(uint16) tokenCompletor {
 	return c.token
 }
 
-func (c *testCommsFns) freeID(uint16) {}
+func (c *testCommsFns) freeID(id uint16) {
+	c.freedIDs = append(c.freedIDs, id)
+}
 
 func (c *testCommsFns) UpdateLastReceived() {}
 
@@ -183,6 +244,10 @@ func (c *testCommsFns) getWriteTimeOut() time.Duration {
 
 func (c *testCommsFns) getMaxIncomingPacketSize() uint32 {
 	return c.maxIncomingPacketSize
+}
+
+func (c *testCommsFns) getProtocolVersion() uint {
+	return c.protocolVersion
 }
 
 func (c *testCommsFns) persistOutbound(packets.ControlPacket) {}
