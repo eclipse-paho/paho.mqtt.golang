@@ -297,7 +297,7 @@ func (fh *FixedHeader) unpack(typeAndFlags byte, r io.Reader) error {
 
 func decodeByte(b io.Reader) (byte, error) {
 	num := make([]byte, 1)
-	_, err := b.Read(num)
+	_, err := io.ReadFull(b, num)
 	if err != nil {
 		return 0, err
 	}
@@ -336,7 +336,7 @@ func decodeBytes(b io.Reader) ([]byte, error) {
 	}
 
 	field := make([]byte, fieldLength)
-	_, err = b.Read(field)
+	_, err = io.ReadFull(b, field)
 	if err != nil {
 		return nil, err
 	}
