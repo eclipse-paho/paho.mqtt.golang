@@ -263,6 +263,10 @@ func TestReadPacketClientIdentifier(t *testing.T) {
 			if connect.ClientIdentifier != tt.want {
 				t.Errorf("client identifier = %q, want %q", connect.ClientIdentifier, tt.want)
 			}
+		})
+    }
+}
+
 func TestSubackReturnCodes(t *testing.T) {
 	check := func(t *testing.T, packet *SubackPacket, err error, codes []byte, wantError bool) {
 		t.Helper()
