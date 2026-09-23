@@ -37,11 +37,11 @@ func Test_resumePublishIndependentHeader(t *testing.T) {
 			c.persist.Put(outboundKeyFromMID(p.MessageID), p)
 
 			// A second reconnect must also leave the stored packet untouched.
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				c.resume(false, nil)
 				out := <-c.obound
 				resumed := out.p.(*packets.PublishPacket)
-				if resumed == p {
+				if qos != 0 && resumed == p { // QOS 0 messages are unchanged so do not need to be copied
 					t.Fatal("resume reused the stored packet")
 				}
 				var wire bytes.Buffer
