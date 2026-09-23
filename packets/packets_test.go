@@ -19,7 +19,9 @@ package packets
 import (
 	"bytes"
 	"errors"
+	"io"
 	"testing"
+	"testing/iotest"
 )
 
 func TestPacketNames(t *testing.T) {
@@ -199,6 +201,72 @@ func TestReadPacketWithLimitAcceptsPacketWithinLimit(t *testing.T) {
 	}
 }
 
+func TestReadPacketMessageID(t *testing.T) {
+	for _, header := range []byte{0x40, 0x50, 0x62, 0x70, 0x90, 0xb0} {
+		t.Run(PacketNames[header>>4], func(t *testing.T) {
+			t.Run("truncated", func(t *testing.T) {
+				// The body matches Remaining Length, but cannot contain a full Message ID.
+				_, err := ReadPacket(bytes.NewReader([]byte{header, 0x01, 0x02}))
+				if !errors.Is(err, io.ErrUnexpectedEOF) {
+					t.Fatalf("expected io.ErrUnexpectedEOF, got %v", err)
+				}
+			})
+			t.Run("complete", func(t *testing.T) {
+				wire := []byte{header, 0x02, 0x12, 0x34}
+				if header>>4 == Suback {
+					wire[1]++
+					wire = append(wire, 0x02)
+				}
+				packet, err := ReadPacket(bytes.NewReader(wire))
+				if err != nil {
+					t.Fatalf("error reading complete packet: %v", err)
+				}
+				if got := packet.Details().MessageID; got != 0x1234 {
+					t.Errorf("Message ID = %#x, want 0x1234", got)
+				}
+				if sa, ok := packet.(*SubackPacket); ok && !bytes.Equal(sa.ReturnCodes, []byte{0x02}) {
+					t.Errorf("return codes = %v, want [2]", sa.ReturnCodes)
+				}
+			})
+		})
+	}
+}
+
+func TestReadPacketClientIdentifier(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		field   []byte
+		want    string
+		wantErr error
+	}{
+		{name: "complete", field: []byte{0, 2, 'i', 'd'}, want: "id"},
+		{name: "empty", field: []byte{0, 0}},
+		{name: "missing body", field: []byte{0, 2}, wantErr: io.EOF},
+		{name: "truncated body", field: []byte{0, 2, 'i'}, wantErr: io.ErrUnexpectedEOF},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// MQTT 3.1.1 CONNECT with Clean Session, allowing an empty client ID.
+			body := append([]byte{0, 4, 'M', 'Q', 'T', 'T', 4, 2, 0, 0}, tt.field...)
+			// Remaining Length is correct even when the field's own length is not.
+			wire := append([]byte{0x10, byte(len(body))}, body...)
+			packet, err := ReadPacket(bytes.NewReader(wire))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			connect, ok := packet.(*ConnectPacket)
+			if !ok {
+				t.Fatalf("packet = %T, want *ConnectPacket", packet)
+			}
+			if connect.ClientIdentifier != tt.want {
+				t.Errorf("client identifier = %q, want %q", connect.ClientIdentifier, tt.want)
+			}
+		})
+    }
+}
+
 func TestSubackReturnCodes(t *testing.T) {
 	check := func(t *testing.T, packet *SubackPacket, err error, codes []byte, wantError bool) {
 		t.Helper()
@@ -298,6 +366,136 @@ func TestPackUnpackControlPackets(t *testing.T) {
 		if read.String() != packet.String() {
 			t.Errorf("Read of packed %T did not equal original.\nExpected: %v\n     Got: %v", packet, packet, read)
 		}
+	}
+}
+
+func TestDecodeUint16(t *testing.T) {
+	readErr := errors.New("read failed")
+	for _, tt := range []struct {
+		name    string
+		reader  io.Reader
+		want    uint16
+		wantErr error
+	}{
+		{name: "complete", reader: bytes.NewReader([]byte{0x12, 0x34}), want: 0x1234},
+		{name: "fragmented", reader: iotest.OneByteReader(bytes.NewReader([]byte{0x12, 0x34})), want: 0x1234},
+		{name: "complete with EOF", reader: iotest.DataErrReader(bytes.NewReader([]byte{0x12, 0x34})), want: 0x1234},
+		{name: "empty", reader: bytes.NewReader(nil), wantErr: io.EOF},
+		{name: "truncated", reader: bytes.NewReader([]byte{0x12}), wantErr: io.ErrUnexpectedEOF},
+		{name: "read error", reader: iotest.ErrReader(readErr), wantErr: readErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := decodeUint16(tt.reader)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("value = %#x, want %#x", got, tt.want)
+			}
+		})
+	}
+}
+
+// emptyFirstReader returns no data on its first read, without indicating EOF.
+type emptyFirstReader struct {
+	io.Reader
+	emptyRead bool
+}
+
+func (r *emptyFirstReader) Read(p []byte) (int, error) {
+	if !r.emptyRead {
+		r.emptyRead = true
+		return 0, nil
+	}
+	return r.Reader.Read(p)
+}
+
+func TestDecodeByte(t *testing.T) {
+	readErr := errors.New("read failed")
+	for _, tt := range []struct {
+		name      string
+		reader    io.Reader
+		want      byte
+		wantErr   error
+		remaining []byte
+	}{
+		{name: "complete", reader: bytes.NewReader([]byte{0x56}), want: 0x56},
+		{name: "empty read then byte", reader: &emptyFirstReader{Reader: bytes.NewReader([]byte{0x56})}, want: 0x56},
+		{name: "complete with EOF", reader: iotest.DataErrReader(bytes.NewReader([]byte{0x56})), want: 0x56},
+		{name: "missing", reader: bytes.NewReader(nil), wantErr: io.EOF},
+		{name: "read error", reader: iotest.ErrReader(readErr), wantErr: readErr},
+		{name: "following byte", reader: bytes.NewReader([]byte{0x56, 0x78}), want: 0x56, remaining: []byte{0x78}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := decodeByte(tt.reader)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("error = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("value = %#x, want %#x", got, tt.want)
+			}
+			if tt.wantErr == nil {
+				remaining, err := io.ReadAll(tt.reader)
+				if err != nil || !bytes.Equal(remaining, tt.remaining) {
+					t.Errorf("remaining bytes = %v, error = %v, want %v", remaining, err, tt.remaining)
+				}
+			}
+		})
+	}
+}
+
+func TestDecodeLengthPrefixedFields(t *testing.T) {
+	readErr := errors.New("read failed")
+	for _, decoder := range []struct {
+		name   string
+		decode func(io.Reader) ([]byte, error)
+	}{
+		{name: "bytes", decode: decodeBytes},
+		{name: "string", decode: func(r io.Reader) ([]byte, error) {
+			value, err := decodeString(r)
+			return []byte(value), err
+		}},
+	} {
+		t.Run(decoder.name, func(t *testing.T) {
+			for _, tt := range []struct {
+				name      string
+				reader    io.Reader
+				want      []byte
+				wantErr   error
+				remaining []byte
+			}{
+				{name: "complete", reader: bytes.NewReader([]byte{0, 3, 'a', 'b', 'c'}), want: []byte("abc")},
+				{name: "fragmented", reader: iotest.OneByteReader(bytes.NewReader([]byte{0, 3, 'a', 'b', 'c'})), want: []byte("abc")},
+				{name: "complete with EOF", reader: iotest.DataErrReader(bytes.NewReader([]byte{0, 3, 'a', 'b', 'c'})), want: []byte("abc")},
+				{name: "empty terminal field", reader: bytes.NewReader([]byte{0, 0})},
+				{name: "missing length", reader: bytes.NewReader(nil), wantErr: io.EOF},
+				{name: "partial length", reader: bytes.NewReader([]byte{0}), wantErr: io.ErrUnexpectedEOF},
+				{name: "missing body", reader: bytes.NewReader([]byte{0, 3}), wantErr: io.EOF},
+				{name: "partial body", reader: bytes.NewReader([]byte{0, 3, 'a'}), wantErr: io.ErrUnexpectedEOF},
+				{name: "fragmented partial body", reader: iotest.OneByteReader(bytes.NewReader([]byte{0, 3, 'a', 'b'})), wantErr: io.ErrUnexpectedEOF},
+				{name: "length read error", reader: iotest.ErrReader(readErr), wantErr: readErr},
+				{name: "body read error", reader: io.MultiReader(bytes.NewReader([]byte{0, 3}), iotest.ErrReader(readErr)), wantErr: readErr},
+				{name: "partial body read error", reader: io.MultiReader(bytes.NewReader([]byte{0, 3, 'a'}), iotest.ErrReader(readErr)), wantErr: readErr},
+				{name: "following field", reader: bytes.NewReader([]byte{0, 3, 'a', 'b', 'c', 0, 1, 'd'}), want: []byte("abc"), remaining: []byte{0, 1, 'd'}},
+				{name: "empty before following field", reader: bytes.NewReader([]byte{0, 0, 0, 1, 'd'}), remaining: []byte{0, 1, 'd'}},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					got, err := decoder.decode(tt.reader)
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("error = %v, want %v", err, tt.wantErr)
+					}
+					if !bytes.Equal(got, tt.want) {
+						t.Errorf("value = %v, want %v", got, tt.want)
+					}
+					if tt.wantErr == nil {
+						remaining, err := io.ReadAll(tt.reader)
+						if err != nil || !bytes.Equal(remaining, tt.remaining) {
+							t.Errorf("remaining bytes = %v, error = %v, want %v", remaining, err, tt.remaining)
+						}
+					}
+				})
+			}
+		})
 	}
 }
 
