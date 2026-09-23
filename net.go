@@ -33,7 +33,7 @@ import (
 )
 
 const closedNetConnErrorText = "use of closed network connection" // error string for closed conn (https://golang.org/src/net/error_test.go)
-var ErrMalformedSuback = errors.New("malformed SUBACK received")
+var ErrMalformedSuback = packets.ErrMalformedSuback
 
 // ConnectMQTT takes a connected net.Conn and performs the initial MQTT handshake. Parameters are:
 // conn - Connected net.Conn
@@ -217,27 +217,16 @@ func startIncomingComms(conn io.Reader,
 			case *packets.SubackPacket:
 				logger.Debug("startIncomingComms: received suback", slog.Uint64("messageID", uint64(m.MessageID)), slog.String("component", string(NET)))
 				token := c.getToken(m.MessageID)
-				t, isSubscribe := token.(*SubscribeToken)
-				// [MQTT-3.8.4-5] requires one return code per requested subscription.
-				malformed := isSubscribe && len(m.ReturnCodes) != len(t.subs)
-				protocolVersion := c.getProtocolVersion()
-				for _, qos := range m.ReturnCodes {
-					// MQTT 3.1 permits only QoS 0, 1 and 2. MQTT 3.1.1 also
-					// permits 0x80 (failure), including in bridge mode.
-					if qos > 2 && !(qos == 0x80 && (protocolVersion == 4 || protocolVersion == 0x84)) {
-						malformed = true
-						break
-					}
-				}
-				if malformed {
-					token.setError(ErrMalformedSuback)
-					c.freeID(m.MessageID)
-					output <- incomingComms{err: ErrMalformedSuback} // This is a protocol error so connection should be closed
-					continue
-				}
 
-				if isSubscribe {
+				if t, ok := token.(*SubscribeToken); ok {
 					logger.Debug("startIncomingComms: granted qoss", slog.Any("returnCodes", m.ReturnCodes), slog.String("component", string(NET)))
+					// [MQTT-3.8.4-5] - The SUBACK Packet sent by the Server to the Client MUST contain a return code for each Topic Filter/QoS pair
+					if len(m.ReturnCodes) != len(t.subs) {
+						token.setError(ErrMalformedSuback)
+						c.freeID(m.MessageID)
+						output <- incomingComms{err: ErrMalformedSuback} // This is a protocol error so connection should be closed
+						continue
+					}
 					for i, qos := range m.ReturnCodes {
 						t.subResult[t.subs[i]] = qos
 					}
@@ -394,7 +383,6 @@ type commsFns interface {
 	UpdateLastSent()                         // Must be called whenever a packet is successfully sent
 	getWriteTimeOut() time.Duration          // Return the writetimeout (or 0 if none)
 	getMaxIncomingPacketSize() uint32        // Return the maximum accepted MQTT Remaining Length (or 0 if none)
-	getProtocolVersion() uint                // Return the negotiated MQTT protocol version
 	persistOutbound(m packets.ControlPacket) // add the packet to the outbound store
 	persistInbound(m packets.ControlPacket)  // add the packet to the inbound store
 	pingRespReceived()                       // Called when a ping response is received

@@ -199,6 +199,75 @@ func TestReadPacketWithLimitAcceptsPacketWithinLimit(t *testing.T) {
 	}
 }
 
+func TestSubackReturnCodes(t *testing.T) {
+	check := func(t *testing.T, packet *SubackPacket, err error, codes []byte, wantError bool) {
+		t.Helper()
+		if wantError {
+			if !errors.Is(err, ErrMalformedSuback) {
+				t.Errorf("error = %v, want ErrMalformedSuback", err)
+			}
+			if packet != nil && len(packet.ReturnCodes) != 0 {
+				t.Errorf("invalid packet populated return codes: %v", packet.ReturnCodes)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("error decoding valid return codes: %v", err)
+		}
+		if packet == nil {
+			t.Fatal("expected a SUBACK packet")
+		}
+		if packet.MessageID != 0x1234 {
+			t.Errorf("message ID = %#x, want 0x1234", packet.MessageID)
+		}
+		if !bytes.Equal(packet.ReturnCodes, codes) {
+			t.Errorf("return codes = %v, want %v", packet.ReturnCodes, codes)
+		}
+	}
+	for _, tt := range []struct {
+		name      string
+		codes     []byte
+		wantError bool
+	}{
+		{name: "qos0", codes: []byte{0}},
+		{name: "qos1", codes: []byte{1}},
+		{name: "qos2", codes: []byte{2}},
+		{name: "failure", codes: []byte{0x80}},
+		{name: "mixed valid", codes: []byte{0, 1, 2, 0x80}},
+		{name: "reserved 03", codes: []byte{3}, wantError: true},
+		{name: "reserved 04", codes: []byte{4}, wantError: true},
+		{name: "reserved 7f", codes: []byte{0x7f}, wantError: true},
+		{name: "reserved 81", codes: []byte{0x81}, wantError: true},
+		{name: "reserved fe", codes: []byte{0xfe}, wantError: true},
+		{name: "reserved ff", codes: []byte{0xff}, wantError: true},
+		{name: "invalid after valid", codes: []byte{0, 1, 2, 0xfe}, wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			body := append([]byte{0x12, 0x34}, tt.codes...)
+			t.Run("Unpack", func(t *testing.T) {
+				packet := NewControlPacket(Suback).(*SubackPacket)
+				err := packet.Unpack(bytes.NewReader(body))
+				check(t, packet, err, tt.codes, tt.wantError)
+			})
+			t.Run("ReadPacket", func(t *testing.T) {
+				wire := append([]byte{0x90, byte(len(body))}, body...)
+				wire = append(wire, 0xd0, 0) // Following PINGRESP must remain unread.
+				reader := bytes.NewReader(wire)
+				packet, err := ReadPacket(reader)
+				suback, _ := packet.(*SubackPacket)
+				check(t, suback, err, tt.codes, tt.wantError)
+				next, err := ReadPacket(reader)
+				if err != nil {
+					t.Fatalf("error reading following packet: %v", err)
+				}
+				if _, ok := next.(*PingrespPacket); !ok {
+					t.Errorf("following packet = %T, want *PingrespPacket", next)
+				}
+			})
+		})
+	}
+}
+
 func TestPackUnpackControlPackets(t *testing.T) {
 	packets := []ControlPacket{
 		NewControlPacket(Connect).(*ConnectPacket),

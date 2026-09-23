@@ -1299,11 +1299,6 @@ func (c *client) getMaxIncomingPacketSize() uint32 {
 	return c.options.MaxIncomingPacketSize
 }
 
-// getProtocolVersion returns the MQTT protocol version selected during connection.
-func (c *client) getProtocolVersion() uint {
-	return c.options.ProtocolVersion
-}
-
 // persistOutbound adds the packet to the outbound store
 func (c *client) persistOutbound(m packets.ControlPacket) {
 	persistOutbound(c.persist, m, c.logger)
