@@ -33,7 +33,7 @@ import (
 )
 
 const closedNetConnErrorText = "use of closed network connection" // error string for closed conn (https://golang.org/src/net/error_test.go)
-var ErrMalformedSuback = errors.New("malformed SUBACK received")
+var ErrMalformedSuback = packets.ErrMalformedSuback
 
 // ConnectMQTT takes a connected net.Conn and performs the initial MQTT handshake. Parameters are:
 // conn - Connected net.Conn
