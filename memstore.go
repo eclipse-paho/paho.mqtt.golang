@@ -69,7 +69,8 @@ func (store *MemoryStore) Open() {
 }
 
 // Put takes a key and a pointer to a Message and stores the
-// message.
+// message without copying it. The packet remains shared; callers must follow
+// the ownership requirements documented by Store.Put.
 func (store *MemoryStore) Put(key string, message packets.ControlPacket) {
 	store.Lock()
 	defer store.Unlock()
@@ -81,7 +82,8 @@ func (store *MemoryStore) Put(key string, message packets.ControlPacket) {
 }
 
 // Get takes a key and looks in the store for a matching Message
-// returning either the Message pointer or nil.
+// returning either the Message pointer or nil. The returned packet is shared;
+// callers must follow the ownership requirements documented by Store.Get.
 func (store *MemoryStore) Get(key string) packets.ControlPacket {
 	store.RLock()
 	defer store.RUnlock()

@@ -34,8 +34,7 @@ func (pc *PubcompPacket) String() string {
 
 func (pc *PubcompPacket) Write(w io.Writer) error {
 	var err error
-	pc.FixedHeader.RemainingLength = 2
-	packet, err := pc.FixedHeader.pack()
+	packet, err := pc.FixedHeader.pack(2)
 	if err != nil {
 		return err
 	}

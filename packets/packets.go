@@ -28,6 +28,7 @@ import (
 // decoded MQTT packets, either from being read or before being
 // written
 type ControlPacket interface {
+	// Write encodes the packet without modifying it (note that `RemainingLength` is not updated).
 	Write(io.Writer) error
 	Unpack(io.Reader) error
 	String() string
@@ -253,10 +254,12 @@ type Details struct {
 // FixedHeader is a struct to hold the decoded information from
 // the fixed header of an MQTT ControlPacket
 type FixedHeader struct {
-	MessageType     byte
-	Dup             bool
-	Qos             byte
-	Retain          bool
+	MessageType byte
+	Dup         bool
+	Qos         byte
+	Retain      bool
+	// RemainingLength is populated when decoding a packet from the wire.
+	// Write calculates the encoded length independently and leaves this field unchanged.
 	RemainingLength int
 }
 
@@ -273,10 +276,10 @@ func boolToByte(b bool) byte {
 	}
 }
 
-func (fh *FixedHeader) pack() (bytes.Buffer, error) {
+func (fh FixedHeader) pack(remainingLength int) (bytes.Buffer, error) {
 	var header bytes.Buffer
 	header.WriteByte(fh.MessageType<<4 | boolToByte(fh.Dup)<<3 | fh.Qos<<1 | boolToByte(fh.Retain))
-	l, err := encodeLength(fh.RemainingLength)
+	l, err := encodeLength(remainingLength)
 	if err != nil {
 		return header, err
 	}

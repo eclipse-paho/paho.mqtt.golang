@@ -8,10 +8,7 @@ services:
           protocol: tcp
           mode: host
         volumes:
-        - type: bind
-          source: ./mosquitto.conf
-          target: /mosquitto/config/mosquitto.conf
-          read_only: true
+        - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,Z
 
 
 
