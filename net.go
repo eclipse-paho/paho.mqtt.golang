@@ -75,6 +75,12 @@ func connectMQTT(conn io.ReadWriter, cm *packets.ConnectPacket, protocolVersion 
 		cm.ProtocolVersion = 4
 	}
 
+	// MQTT-3.1.3-7 forbids an empty ClientId when CleanSession is false.
+	// Reject it before writing so the client never sends an invalid CONNECT packet.
+	if len(cm.ClientIdentifier) == 0 && !cm.CleanSession {
+		return packets.ErrRefusedIDRejected, false, nil
+	}
+
 	if err := cm.Write(conn); err != nil {
 		logger.Error("connectMQTT write error", slog.String("error", err.Error()), slog.String("component", string(CLI)))
 		return packets.ErrNetworkError, false, err

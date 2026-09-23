@@ -29,11 +29,40 @@ func Test_connectMQTT_rejectsOversizedConnack(t *testing.T) {
 	// one-byte limit must reject the packet before attempting to read the body.
 	conn := bytes.NewBuffer([]byte{0x20, 0x02})
 	connectPacket := packets.NewControlPacket(packets.Connect).(*packets.ConnectPacket)
+	connectPacket.CleanSession = true
 
 	_, _, err := connectMQTT(conn, connectPacket, 4, noopSLogger, 1)
 	if !errors.Is(err, packets.ErrPacketTooLarge) {
 		t.Fatalf("expected ErrPacketTooLarge, got %v", err)
 	}
+}
+
+func Test_connectMQTT_rejectsEmptyClientIDForPersistentSession(t *testing.T) {
+	conn := &eofReadWriter{}
+	connectPacket := packets.NewControlPacket(packets.Connect).(*packets.ConnectPacket)
+	connectPacket.CleanSession = false
+
+	rc, sessionPresent, err := connectMQTT(conn, connectPacket, 4, noopSLogger, 0)
+	if err != nil {
+		t.Fatalf("expected invalid client ID to be reported as a CONNACK return code, got error %v", err)
+	}
+	if rc != packets.ErrRefusedIDRejected {
+		t.Fatalf("expected ErrRefusedIDRejected, got %d", rc)
+	}
+	if sessionPresent {
+		t.Fatal("expected no session to be present after rejecting the CONNECT packet")
+	}
+	if conn.Len() != 0 {
+		t.Fatalf("expected invalid CONNECT packet not to be written, wrote %d bytes", conn.Len())
+	}
+}
+
+type eofReadWriter struct {
+	bytes.Buffer
+}
+
+func (eofReadWriter) Read([]byte) (int, error) {
+	return 0, io.EOF
 }
 
 func Test_startIncomingComms_rejectsOversizedPacket(t *testing.T) {
