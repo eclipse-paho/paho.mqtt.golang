@@ -178,3 +178,29 @@ func (c *testCommsFns) persistOutbound(packets.ControlPacket) {}
 func (c *testCommsFns) persistInbound(packets.ControlPacket) {}
 
 func (c *testCommsFns) pingRespReceived() {}
+
+func Test_verifyCONNACK_rejectsReservedReturnCode(t *testing.T) {
+	// Fixed header 0x20, remaining length 2, flags 0, reserved return code 0x06.
+	conn := bytes.NewBuffer([]byte{0x20, 0x02, 0x00, 0x06})
+	rc, _, err := verifyCONNACK(conn, noopSLogger, 0)
+	if !errors.Is(err, packets.ErrorProtocolViolation) {
+		t.Fatalf("expected ErrorProtocolViolation, got rc=%d err=%v", rc, err)
+	}
+	if rc != packets.ErrNetworkError {
+		t.Fatalf("expected ErrNetworkError sentinel on decode failure, got 0x%02x", rc)
+	}
+}
+
+func Test_verifyCONNACK_acceptsStandardReturnCode(t *testing.T) {
+	conn := bytes.NewBuffer([]byte{0x20, 0x02, 0x01, 0x00})
+	rc, sessionPresent, err := verifyCONNACK(conn, noopSLogger, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rc != packets.Accepted {
+		t.Fatalf("expected Accepted, got 0x%02x", rc)
+	}
+	if !sessionPresent {
+		t.Fatal("expected SessionPresent")
+	}
+}

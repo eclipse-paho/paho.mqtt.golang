@@ -477,10 +477,14 @@ func (c *client) attemptConnection(isReconnect bool, attempt int) (net.Conn, byt
 		c.options.protocolVersionExplicit = true
 	} else {
 		// Maintain same error format as used previously
-		if rc != packets.ErrNetworkError { // mqtt error
-			err = packets.ConnErrors[rc]
+		mqttErr, ok := packets.ConnErrors[rc]
+		if !ok {
+			// Reserved MQTT 3.1.1 CONNACK codes must not surface as a nil error.
+			err = fmt.Errorf("%w: reserved CONNACK return code 0x%02x", packets.ErrorProtocolViolation, rc)
+		} else if rc != packets.ErrNetworkError { // mqtt error
+			err = mqttErr
 		} else { // network error (if this occurred in ConnectMQTT then err will be nil)
-			err = fmt.Errorf("%w : %w", packets.ConnErrors[rc], err)
+			err = fmt.Errorf("%w : %w", mqttErr, err)
 		}
 	}
 	if err != nil && c.options.OnConnectionNotification != nil {

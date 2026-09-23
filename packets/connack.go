@@ -60,8 +60,14 @@ func (ca *ConnackPacket) Unpack(b io.Reader) error {
 	}
 	ca.SessionPresent = 1&flags > 0
 	ca.ReturnCode, err = decodeByte(b)
-
-	return err
+	if err != nil {
+		return err
+	}
+	// MQTT 3.1.1 §3.2.2.3: Connect Return codes 0x06-0xff are reserved.
+	if ca.ReturnCode > ErrRefusedNotAuthorised {
+		return fmt.Errorf("%w: reserved CONNACK return code 0x%02x", ErrorProtocolViolation, ca.ReturnCode)
+	}
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

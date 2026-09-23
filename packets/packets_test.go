@@ -562,3 +562,30 @@ func TestEncoding(t *testing.T) {
 	}
 
 }
+
+func TestConnackUnpackRejectsReservedReturnCode(t *testing.T) {
+	for _, rc := range []byte{0x06, 0x07, 0xfe, 0xff} {
+		packet := NewControlPacket(Connack).(*ConnackPacket)
+		payload := bytes.NewBuffer([]byte{0x00, rc})
+		err := packet.Unpack(payload)
+		if !errors.Is(err, ErrorProtocolViolation) {
+			t.Fatalf("return code 0x%02x: expected ErrorProtocolViolation, got %v", rc, err)
+		}
+	}
+}
+
+func TestConnackUnpackAcceptsStandardReturnCodes(t *testing.T) {
+	for rc := byte(0); rc <= 5; rc++ {
+		packet := NewControlPacket(Connack).(*ConnackPacket)
+		payload := bytes.NewBuffer([]byte{0x01, rc})
+		if err := packet.Unpack(payload); err != nil {
+			t.Fatalf("return code 0x%02x: unexpected error %v", rc, err)
+		}
+		if packet.ReturnCode != rc {
+			t.Fatalf("return code 0x%02x: got ReturnCode=%d", rc, packet.ReturnCode)
+		}
+		if !packet.SessionPresent {
+			t.Fatalf("return code 0x%02x: expected SessionPresent", rc)
+		}
+	}
+}
