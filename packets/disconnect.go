@@ -31,7 +31,7 @@ func (d *DisconnectPacket) String() string {
 }
 
 func (d *DisconnectPacket) Write(w io.Writer) error {
-	packet, err := d.FixedHeader.pack()
+	packet, err := d.FixedHeader.pack(0)
 	if err != nil {
 		return err
 	}

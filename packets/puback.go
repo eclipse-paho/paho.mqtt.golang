@@ -34,8 +34,7 @@ func (pa *PubackPacket) String() string {
 
 func (pa *PubackPacket) Write(w io.Writer) error {
 	var err error
-	pa.FixedHeader.RemainingLength = 2
-	packet, err := pa.FixedHeader.pack()
+	packet, err := pa.FixedHeader.pack(2)
 	if err != nil {
 		return err
 	}
