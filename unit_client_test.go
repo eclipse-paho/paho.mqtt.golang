@@ -119,18 +119,18 @@ func Test_isConnectionOpenNegative(t *testing.T) {
 func Test_PublishQoS0NotConnected(t *testing.T) {
 	tests := []struct {
 		name  string
-		setup func(*ClientOptions, *client)
+		setup func(*testing.T, *ClientOptions, *client)
 	}{
 		{
 			name: "connecting with ConnectRetry",
-			setup: func(o *ClientOptions, c *client) {
+			setup: func(t *testing.T, o *ClientOptions, c *client) {
 				o.SetConnectRetry(true)
 				c.status.forceConnectionStatus(connecting)
 			},
 		},
 		{
 			name: "disconnecting with reconnect planned",
-			setup: func(o *ClientOptions, c *client) {
+			setup: func(t *testing.T, o *ClientOptions, c *client) {
 				o.SetAutoReconnect(true)
 				c.status.forceConnectionStatus(connected)
 				if _, err := c.status.ConnectionLost(true); err != nil {
@@ -140,7 +140,7 @@ func Test_PublishQoS0NotConnected(t *testing.T) {
 		},
 		{
 			name: "reconnecting",
-			setup: func(o *ClientOptions, c *client) {
+			setup: func(t *testing.T, o *ClientOptions, c *client) {
 				o.SetAutoReconnect(true)
 				c.status.forceConnectionStatus(reconnecting)
 			},
@@ -152,7 +152,7 @@ func Test_PublishQoS0NotConnected(t *testing.T) {
 			ops := NewClientOptions()
 			ops.SetWriteTimeout(time.Second) // Avoid a long wait should the message be passed to obound
 			c := NewClient(ops).(*client)
-			tt.setup(&c.options, c)
+			tt.setup(t, &c.options, c)
 			if !c.IsConnected() {
 				t.Fatalf("expected IsConnected() to return true")
 			}
