@@ -818,7 +818,8 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 		token.setError(ErrNotConnected)
 		return token
 	case c.status.ConnectionStatus() == reconnecting && qos == 0:
-		// message written to store and will be sent when connection comes up
+		// QoS 0 messages are not persisted so cannot be sent when the connection comes up; the message is
+		// dropped (QoS 0 is "at most once") and the token completed so that callers do not block
 		token.flowComplete()
 		return token
 	}
@@ -848,12 +849,18 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 		token.messageID = mID
 	}
 	persistOutbound(c.persist, pub, c.logger)
-	switch c.status.ConnectionStatus() {
-	case connecting:
+	switch status := c.status.ConnectionStatus(); {
+	case pub.Qos == 0 && status != connected:
+		// QoS 0 messages are not persisted, and have no message ID, so nothing would complete the token if we
+		// stored it. The connection status may also have changed since the check above (e.g. the connection was
+		// lost), so we drop the message and complete the token here (see issue #798).
+		c.logger.Debug("dropping QoS 0 publish message (not connected)", slog.String("topic", topic), slog.String("status", status.String()), slog.String("component", string(CLI)))
+		token.flowComplete()
+	case status == connecting:
 		c.logger.Debug("storing publish message (connecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
-	case reconnecting:
+	case status == reconnecting:
 		c.logger.Debug("storing publish message (reconnecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
-	case disconnecting:
+	case status == disconnecting:
 		c.logger.Debug("storing publish message (disconnecting)", slog.String("topic", topic), slog.String("component", string(CLI)))
 	default:
 		c.logger.Debug("sending publish message", slog.String("topic", topic), slog.String("component", string(CLI)))
