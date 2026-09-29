@@ -23,6 +23,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"testing"
+	"time"
 )
 
 func init() {
@@ -109,5 +110,60 @@ func Test_isConnectionOpenNegative(t *testing.T) {
 	c.(*client).status.forceConnectionStatus(disconnected)
 	if c.IsConnectionOpen() {
 		t.Fail()
+	}
+}
+
+// Test_PublishQoS0NotConnected checks that the token returned when publishing a QoS 0 message, whilst the connection
+// is not up but IsConnected() returns true, completes (QoS 0 messages are not stored, so nothing else would
+// complete the token). See issue #798.
+func Test_PublishQoS0NotConnected(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T, *ClientOptions, *client)
+	}{
+		{
+			name: "connecting with ConnectRetry",
+			setup: func(t *testing.T, o *ClientOptions, c *client) {
+				o.SetConnectRetry(true)
+				c.status.forceConnectionStatus(connecting)
+			},
+		},
+		{
+			name: "disconnecting with reconnect planned",
+			setup: func(t *testing.T, o *ClientOptions, c *client) {
+				o.SetAutoReconnect(true)
+				c.status.forceConnectionStatus(connected)
+				if _, err := c.status.ConnectionLost(true); err != nil {
+					t.Fatalf("ConnectionLost returned unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name: "reconnecting",
+			setup: func(t *testing.T, o *ClientOptions, c *client) {
+				o.SetAutoReconnect(true)
+				c.status.forceConnectionStatus(reconnecting)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ops := NewClientOptions()
+			ops.SetWriteTimeout(time.Second) // Avoid a long wait should the message be passed to obound
+			c := NewClient(ops).(*client)
+			tt.setup(t, &c.options, c)
+			if !c.IsConnected() {
+				t.Fatalf("expected IsConnected() to return true")
+			}
+
+			token := c.Publish("test/topic", 0, false, "payload")
+			if !token.WaitTimeout(5 * time.Second) {
+				t.Fatalf("QoS 0 publish token did not complete")
+			}
+			if token.Error() != nil {
+				t.Fatalf("unexpected error: %v", token.Error())
+			}
+		})
 	}
 }
