@@ -264,7 +264,7 @@ func TestReadPacketClientIdentifier(t *testing.T) {
 				t.Errorf("client identifier = %q, want %q", connect.ClientIdentifier, tt.want)
 			}
 		})
-    }
+	}
 }
 
 func TestSubackReturnCodes(t *testing.T) {
@@ -359,12 +359,19 @@ func TestPackUnpackControlPackets(t *testing.T) {
 		if err := packet.Write(buf); err != nil {
 			t.Errorf("Write of %T returned error: %s", packet, err)
 		}
+		wire := append([]byte(nil), buf.Bytes()...)
 		read, err := ReadPacket(buf)
 		if err != nil {
 			t.Errorf("Read of packed %T returned error: %s", packet, err)
 		}
-		if read.String() != packet.String() {
-			t.Errorf("Read of packed %T did not equal original.\nExpected: %v\n     Got: %v", packet, packet, read)
+		// RemainingLength is populated by decoding, not by Write. Compare the
+		// serialized packets rather than their diagnostic strings.
+		buf.Reset()
+		if err := read.Write(buf); err != nil {
+			t.Fatalf("Write of decoded %T returned error: %s", read, err)
+		}
+		if !bytes.Equal(buf.Bytes(), wire) {
+			t.Errorf("Read of packed %T changed wire encoding: got %x, want %x", packet, buf.Bytes(), wire)
 		}
 	}
 }

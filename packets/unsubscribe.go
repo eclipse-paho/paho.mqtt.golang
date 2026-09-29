@@ -41,8 +41,7 @@ func (u *UnsubscribePacket) Write(w io.Writer) error {
 	for _, topic := range u.Topics {
 		body.Write(encodeString(topic))
 	}
-	u.FixedHeader.RemainingLength = body.Len()
-	packet, err := u.FixedHeader.pack()
+	packet, err := u.FixedHeader.pack(body.Len())
 	if err != nil {
 		return err
 	}

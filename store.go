@@ -38,7 +38,15 @@ const (
 // possible by prepending "i." or "o." to each message id
 type Store interface {
 	Open()
+	// Put stores a packet under the given key. Implementations may retain the
+	// packet pointer rather than make a copy. Put does not transfer exclusive
+	// ownership: the caller may still be using the packet. Both callers and
+	// store implementations must follow the shared-data ownership requirements
+	// documented by Get.
 	Put(key string, message packets.ControlPacket)
+	// Get returns the stored packet, or nil if the key is not found.
+	// The returned packet may be shared with other users of the store; callers must not modify shared packet data.
+	// Make an independent copy of fields that need to change.
 	Get(key string) packets.ControlPacket
 	All() []string
 	Del(key string)

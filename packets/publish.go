@@ -43,8 +43,7 @@ func (p *PublishPacket) Write(w io.Writer) error {
 	if p.Qos > 0 {
 		body.Write(encodeUint16(p.MessageID))
 	}
-	p.FixedHeader.RemainingLength = body.Len() + len(p.Payload)
-	packet, err := p.FixedHeader.pack()
+	packet, err := p.FixedHeader.pack(body.Len() + len(p.Payload))
 	if err != nil {
 		return err
 	}
@@ -86,7 +85,9 @@ func (p *PublishPacket) Unpack(b io.Reader) error {
 // Copy creates a new PublishPacket with the same topic and payload
 // but an empty fixed header, useful for when you want to deliver
 // a message with different properties such as Qos but the same
-// content
+// content.
+// The payload's backing array is shared with the original packet. Copy the
+// payload separately before modifying its contents.
 func (p *PublishPacket) Copy() *PublishPacket {
 	newP := NewControlPacket(Publish).(*PublishPacket)
 	newP.TopicName = p.TopicName

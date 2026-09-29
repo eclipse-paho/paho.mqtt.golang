@@ -82,6 +82,9 @@ type Client interface {
 	// Publish will publish a message with the specified QoS and content
 	// to the specified topic.
 	// Returns a token to track delivery of the message to the broker
+	//
+	// For []byte and bytes.Buffer payloads, the underlying bytes are not copied.
+	// Mutating these payloads after calling Publish may lead to data races.
 	Publish(topic string, qos byte, retained bool, payload interface{}) Token
 	// Subscribe starts a new subscription. Provide a MessageHandler to be executed when
 	// a message is published on the topic provided, or nil for the default handler.
@@ -810,6 +813,9 @@ func (c *client) stopCommsWorkers() chan struct{} {
 // Publish will publish a message with the specified QoS and content
 // to the specified topic.
 // Returns a token to track delivery of the message to the broker
+//
+// For []byte and bytes.Buffer payloads, the underlying bytes are not copied.
+// Mutating these payloads after calling Publish may lead to data races.
 func (c *client) Publish(topic string, qos byte, retained bool, payload interface{}) Token {
 	token := newToken(packets.Publish).(*PublishToken)
 	c.logger.Debug("enter Publish", slog.String("component", string(CLI)))
@@ -1149,8 +1155,11 @@ func (c *client) resume(subscription bool, ibound chan packets.ControlPacket) {
 				//
 				// If the message is in the store, then an attempt at delivery has been made (note that the message may
 				// never have made it onto the wire, but tracking that would be complicated!).
-				if p.Qos != 0 { // spec: The DUP flag MUST be set to 0 for all QoS 0 messages
-					p.Dup = true
+				if p.Qos != 0 {
+					// We should not mutate packets from the store
+					resumed := *p
+					resumed.Dup = true // spec: The DUP flag MUST be set to 0 for all QoS 0 messages
+					p = &resumed
 				}
 				token := newToken(packets.Publish).(*PublishToken)
 				token.messageID = details.MessageID

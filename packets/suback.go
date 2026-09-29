@@ -43,8 +43,7 @@ func (sa *SubackPacket) Write(w io.Writer) error {
 	var err error
 	body.Write(encodeUint16(sa.MessageID))
 	body.Write(sa.ReturnCodes)
-	sa.FixedHeader.RemainingLength = body.Len()
-	packet, err := sa.FixedHeader.pack()
+	packet, err := sa.FixedHeader.pack(body.Len())
 	if err != nil {
 		return err
 	}

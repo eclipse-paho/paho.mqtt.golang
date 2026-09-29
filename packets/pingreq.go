@@ -31,7 +31,7 @@ func (pr *PingreqPacket) String() string {
 }
 
 func (pr *PingreqPacket) Write(w io.Writer) error {
-	packet, err := pr.FixedHeader.pack()
+	packet, err := pr.FixedHeader.pack(0)
 	if err != nil {
 		return err
 	}
