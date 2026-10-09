@@ -1325,6 +1325,15 @@ func (c *client) persistInbound(m packets.ControlPacket) {
 	persistInbound(c.persist, m, c.logger)
 }
 
+// qos2PublishInProgress reports whether an inbound QoS 2 PUBLISH with this
+// packet identifier is already stored. That publish stays until PUBREL, so a
+// later DUP resend is a retransmission, not a new message.
+func (c *client) qos2PublishInProgress(id uint16) bool {
+	stored := c.persist.Get(inboundKeyFromMID(id))
+	pub, ok := stored.(*packets.PublishPacket)
+	return ok && pub.Qos == 2
+}
+
 // pingRespReceived will be called by the network routines when a ping response is received
 func (c *client) pingRespReceived() {
 	atomic.StoreInt32(&c.pingOutstanding, 0)

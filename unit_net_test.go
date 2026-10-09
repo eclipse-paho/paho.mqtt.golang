@@ -151,6 +151,7 @@ type testCommsFns struct {
 	token                 tokenCompletor
 	maxIncomingPacketSize uint32
 	freedIDs              []uint16
+	inboundQoS2           map[uint16]struct{}
 }
 
 func (c *testCommsFns) getToken(uint16) tokenCompletor {
@@ -175,6 +176,99 @@ func (c *testCommsFns) getMaxIncomingPacketSize() uint32 {
 
 func (c *testCommsFns) persistOutbound(packets.ControlPacket) {}
 
-func (c *testCommsFns) persistInbound(packets.ControlPacket) {}
+func (c *testCommsFns) persistInbound(m packets.ControlPacket) {
+	pub, ok := m.(*packets.PublishPacket)
+	if !ok || pub.Qos != 2 {
+		return
+	}
+	if c.inboundQoS2 == nil {
+		c.inboundQoS2 = map[uint16]struct{}{}
+	}
+	c.inboundQoS2[pub.MessageID] = struct{}{}
+}
+
+func (c *testCommsFns) qos2PublishInProgress(id uint16) bool {
+	if c.inboundQoS2 == nil {
+		return false
+	}
+	_, ok := c.inboundQoS2[id]
+	return ok
+}
 
 func (c *testCommsFns) pingRespReceived() {}
+
+func Test_startIncomingComms_duplicateQoS2Publish(t *testing.T) {
+	writePublish := func(qos byte, id uint16, dup bool, payload string) *packets.PublishPacket {
+		pub := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+		pub.Qos = qos
+		pub.Dup = dup
+		pub.MessageID = id
+		pub.TopicName = "a/b"
+		pub.Payload = []byte(payload)
+		return pub
+	}
+	run := func(t *testing.T, packetsToSend ...*packets.PublishPacket) (pubs int, pubrecs int) {
+		t.Helper()
+		var conn bytes.Buffer
+		for _, pub := range packetsToSend {
+			if err := pub.Write(&conn); err != nil {
+				t.Fatalf("write publish: %v", err)
+			}
+		}
+		inboundFromStore := make(chan packets.ControlPacket)
+		close(inboundFromStore)
+		output := startIncomingComms(&conn, &testCommsFns{}, inboundFromStore, noopSLogger)
+		for {
+			select {
+			case msg, ok := <-output:
+				if !ok {
+					return pubs, pubrecs
+				}
+				if msg.err != nil {
+					if !errors.Is(msg.err, io.EOF) {
+						t.Fatalf("unexpected error: %v", msg.err)
+					}
+					continue
+				}
+				if msg.incomingPub != nil {
+					pubs++
+				}
+				if msg.outbound != nil {
+					if pr, ok := msg.outbound.p.(*packets.PubrecPacket); ok && pr.MessageID == packetsToSend[0].MessageID {
+						pubrecs++
+					}
+				}
+			case <-time.After(time.Second):
+				t.Fatal("startIncomingComms did not finish")
+			}
+		}
+	}
+
+	t.Run("dup", func(t *testing.T) {
+		pubs, pubrecs := run(t,
+			writePublish(2, 7, false, "one"),
+			writePublish(2, 7, true, "one"),
+		)
+		if pubs != 1 || pubrecs != 1 {
+			t.Fatalf("delivered %d publishes and %d PUBREC, want 1 and 1", pubs, pubrecs)
+		}
+	})
+	t.Run("without dup flag", func(t *testing.T) {
+		pubs, pubrecs := run(t,
+			writePublish(2, 7, false, "one"),
+			writePublish(2, 7, false, "two"),
+		)
+		if pubs != 2 || pubrecs != 0 {
+			t.Fatalf("delivered %d publishes and %d PUBREC, want 2 and 0", pubs, pubrecs)
+		}
+	})
+	t.Run("qos1 dup still delivered", func(t *testing.T) {
+		pubs, pubrecs := run(t,
+			writePublish(1, 7, false, "one"),
+			writePublish(1, 7, true, "one"),
+		)
+		if pubs != 2 || pubrecs != 0 {
+			t.Fatalf("delivered %d publishes and %d PUBREC, want 2 and 0", pubs, pubrecs)
+		}
+	})
+}
