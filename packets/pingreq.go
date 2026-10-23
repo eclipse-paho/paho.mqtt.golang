@@ -43,7 +43,7 @@ func (pr *PingreqPacket) Write(w io.Writer) error {
 // Unpack decodes the details of a ControlPacket after the fixed
 // header has been read
 func (pr *PingreqPacket) Unpack(b io.Reader) error {
-	return nil
+	return expectBodyEnd(Pingreq, b)
 }
 
 // Details returns a Details struct containing the Qos and

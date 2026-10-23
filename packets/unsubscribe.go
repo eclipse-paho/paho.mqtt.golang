@@ -18,9 +18,13 @@ package packets
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 )
+
+// ErrMalformedUnsubscribe indicates that a UNSUBSCRIBE packet is malformed.
+var ErrMalformedUnsubscribe = errors.New("malformed UNSUBSCRIBE received")
 
 // UnsubscribePacket is an internal representation of the fields of the
 // Unsubscribe MQTT packet
@@ -60,11 +64,24 @@ func (u *UnsubscribePacket) Unpack(b io.Reader) error {
 		return err
 	}
 
-	for topic, err := decodeString(b); err == nil && topic != ""; topic, err = decodeString(b) {
+	// The payload is one or more length-prefixed topic filters, so decoding runs
+	// up to the end of the body: a truncated filter is an error and the reader
+	// cannot be left holding bytes that follow the last filter.
+	for {
+		topic, err := decodeString(b)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if topic == "" {
+			return fmt.Errorf("%w: empty topic filter", ErrMalformedUnsubscribe)
+		}
 		u.Topics = append(u.Topics, topic)
 	}
 
-	return err
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and
