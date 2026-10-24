@@ -43,7 +43,7 @@ func (d *DisconnectPacket) Write(w io.Writer) error {
 // Unpack decodes the details of a ControlPacket after the fixed
 // header has been read
 func (d *DisconnectPacket) Unpack(b io.Reader) error {
-	return expectBodyEnd(Disconnect, b)
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

@@ -53,7 +53,7 @@ func (pr *PubrecPacket) Unpack(b io.Reader) error {
 		return err
 	}
 
-	return expectBodyEnd(Pubrec, b)
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

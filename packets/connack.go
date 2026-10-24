@@ -63,7 +63,7 @@ func (ca *ConnackPacket) Unpack(b io.Reader) error {
 		return err
 	}
 
-	return expectBodyEnd(Connack, b)
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

@@ -135,7 +135,7 @@ func (c *ConnectPacket) Unpack(b io.Reader) error {
 		}
 	}
 
-	return expectBodyEnd(Connect, b)
+	return nil
 }
 
 // Validate performs validation of the fields of a Connect packet

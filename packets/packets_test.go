@@ -337,6 +337,11 @@ func TestSubackReturnCodes(t *testing.T) {
 }
 
 func TestPackUnpackControlPackets(t *testing.T) {
+	// The UNSUBSCRIBE payload requires at least one topic filter (MQTT-3.10.3-2),
+	// so the round-trip fixture cannot use the zero-value packet with no topics.
+	unsubscribe := NewControlPacket(Unsubscribe).(*UnsubscribePacket)
+	unsubscribe.MessageID = 0x1234
+	unsubscribe.Topics = []string{"a/b"}
 	packets := []ControlPacket{
 		NewControlPacket(Connect).(*ConnectPacket),
 		NewControlPacket(Connack).(*ConnackPacket),
@@ -347,7 +352,7 @@ func TestPackUnpackControlPackets(t *testing.T) {
 		NewControlPacket(Pubcomp).(*PubcompPacket),
 		NewControlPacket(Subscribe).(*SubscribePacket),
 		NewControlPacket(Suback).(*SubackPacket),
-		NewControlPacket(Unsubscribe).(*UnsubscribePacket),
+		unsubscribe,
 		NewControlPacket(Unsuback).(*UnsubackPacket),
 		NewControlPacket(Pingreq).(*PingreqPacket),
 		NewControlPacket(Pingresp).(*PingrespPacket),
@@ -605,11 +610,12 @@ func TestPacketBodyLength(t *testing.T) {
 			extra := append(append([]byte(nil), tt.body...), 0xff)
 
 			t.Run("trailing byte", func(t *testing.T) {
-				// The reader passed to Unpack is the packet body, so bytes that no
-				// field accounts for are a protocol error.
+				// Unpack consumes the packet's fields and leaves any unread bytes
+				// in the reader untouched, so it stays safe to call on a stream.
+				// Rejecting the leftover bytes is the packet reader's job.
 				packet := NewControlPacket(packetType)
-				if err := packet.Unpack(bytes.NewReader(extra)); !errors.Is(err, ErrUnexpectedBodyData) {
-					t.Errorf("error = %v, want ErrUnexpectedBodyData", err)
+				if err := packet.Unpack(bytes.NewReader(extra)); err != nil {
+					t.Errorf("error = %v, want nil (the packet reader rejects unread body bytes)", err)
 				}
 			})
 
@@ -739,19 +745,13 @@ func TestVariableLengthBodyBoundaries(t *testing.T) {
 		})
 
 		t.Run("no topic filters", func(t *testing.T) {
+			// MQTT-3.10.3-2: the payload must contain at least one topic filter, so
+			// a body holding only the packet identifier is malformed.
 			body := []byte{0x12, 0x34}
 			wire := append([]byte{0xa2, byte(len(body))}, body...)
 
-			packet, err := ReadPacket(bytes.NewReader(wire))
-			if err != nil {
-				t.Fatalf("error reading unsubscribe without filters: %v", err)
-			}
-			un, ok := packet.(*UnsubscribePacket)
-			if !ok {
-				t.Fatalf("packet = %T, want *UnsubscribePacket", packet)
-			}
-			if len(un.Topics) != 0 {
-				t.Errorf("topics = %q, want none", un.Topics)
+			if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, ErrMalformedUnsubscribe) {
+				t.Errorf("error = %v, want ErrMalformedUnsubscribe", err)
 			}
 		})
 
@@ -780,23 +780,15 @@ func TestVariableLengthBodyBoundaries(t *testing.T) {
 	})
 }
 
-func TestExpectBodyEnd(t *testing.T) {
-	readErr := errors.New("read failed")
-	for _, tt := range []struct {
-		name    string
-		reader  io.Reader
-		wantErr error
-	}{
-		{name: "body end", reader: bytes.NewReader(nil)},
-		{name: "fragmented body end", reader: iotest.OneByteReader(bytes.NewReader(nil))},
-		{name: "trailing data", reader: bytes.NewReader([]byte{0xff}), wantErr: ErrUnexpectedBodyData},
-		{name: "trailing data with EOF", reader: iotest.DataErrReader(bytes.NewReader([]byte{0xff})), wantErr: ErrUnexpectedBodyData},
-		{name: "read error", reader: iotest.ErrReader(readErr), wantErr: readErr},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := expectBodyEnd(Pingresp, tt.reader); !errors.Is(err, tt.wantErr) {
-				t.Errorf("error = %v, want %v", err, tt.wantErr)
-			}
-		})
+func TestReadPacketRejectsUnreadBodyBytes(t *testing.T) {
+	// A CONNECT body whose fields end after the empty client id: protocol name
+	// "MQTT", level 4, clean-session flag, zero keepalive. The final byte is
+	// declared in the Remaining Length but never consumed by Unpack, so the
+	// packet reader must reject it instead of accepting the trailing data.
+	body := []byte{0x00, 0x04, 'M', 'Q', 'T', 'T', 0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0xff}
+	wire := append([]byte{0x10, byte(len(body))}, body...)
+
+	if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, ErrUnexpectedBodyData) {
+		t.Errorf("error = %v, want ErrUnexpectedBodyData", err)
 	}
 }

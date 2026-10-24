@@ -185,8 +185,22 @@ func ReadPacketWithLimit(r io.Reader, maxPacketSize uint32) (ControlPacket, erro
 		return nil, errors.New("failed to read expected data")
 	}
 
-	if err = cp.Unpack(bytes.NewBuffer(packetBytes)); err != nil {
+	body := bytes.NewBuffer(packetBytes)
+	if err = cp.Unpack(body); err != nil {
 		return nil, err
+	}
+	// MQTT 3.1.1 fixes the length of several packet bodies, so bytes left after the
+	// packet's fields mean the Remaining Length (section 2.2.3) does not match the
+	// packet type. Checking the buffer here (Unpack must always consume the whole
+	// body) avoids probing the reader inside every packet and never consumes from
+	// a caller's stream.
+	if body.Len() != 0 {
+		return nil, fmt.Errorf(
+			"%w: %s has %d unread body bytes",
+			ErrUnexpectedBodyData,
+			PacketNames[fh.MessageType],
+			body.Len(),
+		)
 	}
 	return cp, nil
 }
@@ -319,24 +333,6 @@ func (fh *FixedHeader) unpack(typeAndFlags byte, r io.Reader) error {
 	var err error
 	fh.RemainingLength, err = decodeLength(r)
 	return err
-}
-
-// expectBodyEnd checks that b holds no bytes beyond the fields that have already
-// been decoded. MQTT 3.1.1 fixes the length of several packet bodies, so an unread
-// byte at the end of a body means the Remaining Length (section 2.2.3) does not
-// match the packet type. The reader handed to Unpack is the packet body, so direct
-// Unpack calls are checked the same way ReadPacket checks a packet from the stream.
-func expectBodyEnd(packetType byte, b io.Reader) error {
-	var probe [1]byte
-	n, err := b.Read(probe[:])
-	if n > 0 {
-		return fmt.Errorf("%w: %s body has data after its fields",
-			ErrUnexpectedBodyData, PacketNames[packetType])
-	}
-	if err != nil && !errors.Is(err, io.EOF) {
-		return err
-	}
-	return nil
 }
 
 func decodeByte(b io.Reader) (byte, error) {

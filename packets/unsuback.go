@@ -53,7 +53,7 @@ func (ua *UnsubackPacket) Unpack(b io.Reader) error {
 		return err
 	}
 
-	return expectBodyEnd(Unsuback, b)
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and
