@@ -49,8 +49,11 @@ func (ua *UnsubackPacket) Write(w io.Writer) error {
 func (ua *UnsubackPacket) Unpack(b io.Reader) error {
 	var err error
 	ua.MessageID, err = decodeUint16(b)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

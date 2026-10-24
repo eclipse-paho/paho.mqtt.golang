@@ -18,9 +18,13 @@ package packets
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 )
+
+// ErrMalformedUnsubscribe indicates that a UNSUBSCRIBE packet is malformed.
+var ErrMalformedUnsubscribe = errors.New("malformed UNSUBSCRIBE received")
 
 // UnsubscribePacket is an internal representation of the fields of the
 // Unsubscribe MQTT packet
@@ -60,11 +64,40 @@ func (u *UnsubscribePacket) Unpack(b io.Reader) error {
 		return err
 	}
 
-	for topic, err := decodeString(b); err == nil && topic != ""; topic, err = decodeString(b) {
-		u.Topics = append(u.Topics, topic)
+	// The payload is one or more length-prefixed topic filters (MQTT-3.10.3-2
+	// requires at least one), so decoding runs up to the end of the body. Only a
+	// clean EOF on the length prefix terminates the payload; a filter whose
+	// content is truncated is an error.
+	u.Topics = nil // In case Unpack is called multiple times
+	for {
+		topicLength, err := decodeUint16(b)
+		if errors.Is(err, io.EOF) {
+			if len(u.Topics) == 0 {
+				return fmt.Errorf("%w: no topic filters", ErrMalformedUnsubscribe)
+			}
+			break
+		}
+		if err != nil {
+			return err // Includes a partially read length prefix.
+		}
+		if topicLength == 0 {
+			return fmt.Errorf("%w: empty topic filter", ErrMalformedUnsubscribe)
+		}
+
+		topic := make([]byte, topicLength)
+		if _, err := io.ReadFull(b, topic); err != nil {
+			if errors.Is(err, io.EOF) {
+				// The length prefix was present, so missing content
+				// means the field is truncated.
+				return io.ErrUnexpectedEOF
+			}
+			return err
+		}
+
+		u.Topics = append(u.Topics, string(topic))
 	}
 
-	return err
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

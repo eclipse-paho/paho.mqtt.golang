@@ -59,8 +59,11 @@ func (ca *ConnackPacket) Unpack(b io.Reader) error {
 	}
 	ca.SessionPresent = 1&flags > 0
 	ca.ReturnCode, err = decodeByte(b)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

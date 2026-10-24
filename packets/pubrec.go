@@ -49,8 +49,11 @@ func (pr *PubrecPacket) Write(w io.Writer) error {
 func (pr *PubrecPacket) Unpack(b io.Reader) error {
 	var err error
 	pr.MessageID, err = decodeUint16(b)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return nil
 }
 
 // Details returns a Details struct containing the Qos and

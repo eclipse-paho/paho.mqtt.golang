@@ -337,6 +337,11 @@ func TestSubackReturnCodes(t *testing.T) {
 }
 
 func TestPackUnpackControlPackets(t *testing.T) {
+	// The UNSUBSCRIBE payload requires at least one topic filter (MQTT-3.10.3-2),
+	// so the round-trip fixture cannot use the zero-value packet with no topics.
+	unsubscribe := NewControlPacket(Unsubscribe).(*UnsubscribePacket)
+	unsubscribe.MessageID = 0x1234
+	unsubscribe.Topics = []string{"a/b"}
 	packets := []ControlPacket{
 		NewControlPacket(Connect).(*ConnectPacket),
 		NewControlPacket(Connack).(*ConnackPacket),
@@ -347,7 +352,7 @@ func TestPackUnpackControlPackets(t *testing.T) {
 		NewControlPacket(Pubcomp).(*PubcompPacket),
 		NewControlPacket(Subscribe).(*SubscribePacket),
 		NewControlPacket(Suback).(*SubackPacket),
-		NewControlPacket(Unsubscribe).(*UnsubscribePacket),
+		unsubscribe,
 		NewControlPacket(Unsuback).(*UnsubackPacket),
 		NewControlPacket(Pingreq).(*PingreqPacket),
 		NewControlPacket(Pingresp).(*PingrespPacket),
@@ -568,4 +573,222 @@ func TestEncoding(t *testing.T) {
 		t.Errorf("encodeBytes did not truncate overlength data (expected len 65538, received %d", len(res))
 	}
 
+}
+
+// TestPacketBodyLength checks that a packet whose Remaining Length does not match
+// the body its type defines is rejected (#778). Truncated bodies are already
+// covered by TestReadPacketMessageID.
+func TestPacketBodyLength(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		header byte
+		body   []byte
+	}{
+		{name: "connack", header: 0x20, body: []byte{0x00, 0x00}},
+		{name: "puback", header: 0x40, body: []byte{0x12, 0x34}},
+		{name: "pubrec", header: 0x50, body: []byte{0x12, 0x34}},
+		{name: "pubrel", header: 0x62, body: []byte{0x12, 0x34}},
+		{name: "pubcomp", header: 0x70, body: []byte{0x12, 0x34}},
+		{name: "unsuback", header: 0xb0, body: []byte{0x12, 0x34}},
+		{name: "pingreq", header: 0xc0},
+		{name: "pingresp", header: 0xd0},
+		{name: "disconnect", header: 0xe0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			packetType := tt.header >> 4
+
+			t.Run("standard length", func(t *testing.T) {
+				wire := append([]byte{tt.header, byte(len(tt.body))}, tt.body...)
+				if _, err := ReadPacket(bytes.NewReader(wire)); err != nil {
+					t.Errorf("error reading packet with its standard body length: %v", err)
+				}
+				if err := NewControlPacket(packetType).Unpack(bytes.NewReader(tt.body)); err != nil {
+					t.Errorf("error unpacking packet with its standard body length: %v", err)
+				}
+			})
+
+			extra := append(append([]byte(nil), tt.body...), 0xff)
+
+			t.Run("trailing byte", func(t *testing.T) {
+				// Unpack consumes the packet's fields and leaves any unread bytes
+				// in the reader untouched, so it stays safe to call on a stream.
+				// Rejecting the leftover bytes is the packet reader's job.
+				packet := NewControlPacket(packetType)
+				if err := packet.Unpack(bytes.NewReader(extra)); err != nil {
+					t.Errorf("error = %v, want nil (the packet reader rejects unread body bytes)", err)
+				}
+			})
+
+			t.Run("declared length", func(t *testing.T) {
+				// Overstating the length of a fixed-length body is rejected before
+				// the declared bytes are read, so a hostile peer cannot make the
+				// reader allocate for a packet that can never be valid.
+				wire := append([]byte{tt.header, byte(len(extra))}, extra...)
+				packet, err := ReadPacket(bytes.NewReader(wire))
+				if !errors.Is(err, ErrUnexpectedBodyData) {
+					t.Fatalf("error = %v, want ErrUnexpectedBodyData", err)
+				}
+				if packet != nil {
+					t.Errorf("packet = %T, want nil so that it cannot be processed", packet)
+				}
+			})
+		})
+	}
+}
+
+// TestVariableLengthBodyBoundaries covers the packets whose body size depends on
+// their fields (#778): the payload of a PUBLISH, the return codes of a SUBACK and
+// the topic filters of CONNECT/SUBSCRIBE/UNSUBSCRIBE must not be mistaken for
+// trailing data, while bytes that no field accounts for must be rejected.
+func TestVariableLengthBodyBoundaries(t *testing.T) {
+	t.Run("publish", func(t *testing.T) {
+		wire := []byte{0x30, 8, 0, 1, 'a', 'h', 'e', 'l', 'l', 'o'}
+		packet, err := ReadPacket(bytes.NewReader(wire))
+		if err != nil {
+			t.Fatalf("error reading publish: %v", err)
+		}
+		pub, ok := packet.(*PublishPacket)
+		if !ok {
+			t.Fatalf("packet = %T, want *PublishPacket", packet)
+		}
+		if string(pub.Payload) != "hello" {
+			t.Errorf("payload = %q, want \"hello\"", pub.Payload)
+		}
+	})
+
+	t.Run("publish fragmented body", func(t *testing.T) {
+		pub := NewControlPacket(Publish).(*PublishPacket)
+		pub.FixedHeader.RemainingLength = 8
+		body := []byte{0, 1, 'a', 'h', 'e', 'l', 'l', 'o'}
+
+		if err := pub.Unpack(iotest.OneByteReader(bytes.NewReader(body))); err != nil {
+			t.Fatalf("error unpacking publish: %v", err)
+		}
+		if string(pub.Payload) != "hello" {
+			t.Errorf("payload = %q, want \"hello\"", pub.Payload)
+		}
+	})
+
+	t.Run("suback return codes", func(t *testing.T) {
+		wire := []byte{0x90, 5, 0x12, 0x34, 0, 1, 0x80}
+		packet, err := ReadPacket(bytes.NewReader(wire))
+		if err != nil {
+			t.Fatalf("error reading suback: %v", err)
+		}
+		sa, ok := packet.(*SubackPacket)
+		if !ok {
+			t.Fatalf("packet = %T, want *SubackPacket", packet)
+		}
+		if !bytes.Equal(sa.ReturnCodes, []byte{0, 1, 0x80}) {
+			t.Errorf("return codes = %v, want [0 1 128]", sa.ReturnCodes)
+		}
+	})
+
+	t.Run("connect trailing byte", func(t *testing.T) {
+		// MQTT 3.1.1 CONNECT with clean session and client ID "id", plus a byte
+		// that no CONNECT field accounts for.
+		body := []byte{0, 4, 'M', 'Q', 'T', 'T', 4, 2, 0, 0, 0, 2, 'i', 'd', 0xff}
+		wire := append([]byte{0x10, byte(len(body))}, body...)
+
+		if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, ErrUnexpectedBodyData) {
+			t.Errorf("error = %v, want ErrUnexpectedBodyData", err)
+		}
+	})
+
+	t.Run("malformed then valid", func(t *testing.T) {
+		// CONNECT's declared length is consistent with its fields, so its body is
+		// read in full before the trailing byte is rejected. The packet after it
+		// must still be framed correctly rather than parsed as garbage.
+		body := []byte{0, 4, 'M', 'Q', 'T', 'T', 4, 2, 0, 0, 0, 2, 'i', 'd', 0xff}
+		reader := bytes.NewReader(append(append([]byte{0x10, byte(len(body))}, body...), 0xd0, 0))
+
+		if _, err := ReadPacket(reader); !errors.Is(err, ErrUnexpectedBodyData) {
+			t.Fatalf("error = %v, want ErrUnexpectedBodyData", err)
+		}
+		next, err := ReadPacket(reader)
+		if err != nil {
+			t.Fatalf("error reading following packet: %v", err)
+		}
+		if _, ok := next.(*PingrespPacket); !ok {
+			t.Errorf("following packet = %T, want *PingrespPacket", next)
+		}
+	})
+
+	t.Run("subscribe trailing byte", func(t *testing.T) {
+		// Message ID, the filter "a" with its QoS byte, then a stray byte. The
+		// filter loop is driven by Remaining Length, so the stray byte is parsed
+		// as the length prefix of another filter and the truncation is reported.
+		body := []byte{0x12, 0x34, 0, 1, 'a', 0, 0xff}
+		wire := append([]byte{0x82, byte(len(body))}, body...)
+
+		if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("error = %v, want io.ErrUnexpectedEOF", err)
+		}
+	})
+
+	t.Run("unsubscribe", func(t *testing.T) {
+		t.Run("topic filters", func(t *testing.T) {
+			body := []byte{0x12, 0x34, 0, 1, 'a', 0, 2, 'b', 'c'}
+			wire := append([]byte{0xa2, byte(len(body))}, body...)
+
+			packet, err := ReadPacket(bytes.NewReader(wire))
+			if err != nil {
+				t.Fatalf("error reading unsubscribe: %v", err)
+			}
+			un, ok := packet.(*UnsubscribePacket)
+			if !ok {
+				t.Fatalf("packet = %T, want *UnsubscribePacket", packet)
+			}
+			if len(un.Topics) != 2 || un.Topics[0] != "a" || un.Topics[1] != "bc" {
+				t.Errorf("topics = %q, want [a bc]", un.Topics)
+			}
+		})
+
+		t.Run("no topic filters", func(t *testing.T) {
+			// MQTT-3.10.3-2: the payload must contain at least one topic filter, so
+			// a body holding only the packet identifier is malformed.
+			body := []byte{0x12, 0x34}
+			wire := append([]byte{0xa2, byte(len(body))}, body...)
+
+			if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, ErrMalformedUnsubscribe) {
+				t.Errorf("error = %v, want ErrMalformedUnsubscribe", err)
+			}
+		})
+
+		t.Run("empty topic filter", func(t *testing.T) {
+			// The filters run until the end of the body; an empty one is not a
+			// topic filter, so it cannot mark the end of the payload.
+			body := []byte{0x12, 0x34, 0, 1, 'a', 0, 0}
+			wire := append([]byte{0xa2, byte(len(body))}, body...)
+
+			if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, ErrMalformedUnsubscribe) {
+				t.Errorf("error = %v, want ErrMalformedUnsubscribe", err)
+			}
+		})
+
+		t.Run("truncated topic filter", func(t *testing.T) {
+			// A filter whose declared length runs past the end of the body must be
+			// reported; the unpacker used to discard the decode error and accept an
+			// UNSUBSCRIBE with no filters at all.
+			body := []byte{0x12, 0x34, 0, 2, 'a'}
+			wire := append([]byte{0xa2, byte(len(body))}, body...)
+
+			if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Errorf("error = %v, want io.ErrUnexpectedEOF", err)
+			}
+		})
+	})
+}
+
+func TestReadPacketRejectsUnreadBodyBytes(t *testing.T) {
+	// A CONNECT body whose fields end after the empty client id: protocol name
+	// "MQTT", level 4, clean-session flag, zero keepalive. The final byte is
+	// declared in the Remaining Length but never consumed by Unpack, so the
+	// packet reader must reject it instead of accepting the trailing data.
+	body := []byte{0x00, 0x04, 'M', 'Q', 'T', 'T', 0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0xff}
+	wire := append([]byte{0x10, byte(len(body))}, body...)
+
+	if _, err := ReadPacket(bytes.NewReader(wire)); !errors.Is(err, ErrUnexpectedBodyData) {
+		t.Errorf("error = %v, want ErrUnexpectedBodyData", err)
+	}
 }

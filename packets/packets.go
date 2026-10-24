@@ -107,6 +107,7 @@ var (
 	ErrorNetworkError                 = errors.New("network Error")
 	ErrorProtocolViolation            = errors.New("protocol Violation")
 	ErrPacketTooLarge                 = errors.New("incoming packet exceeds configured maximum size")
+	ErrUnexpectedBodyData             = errors.New("unexpected data at end of packet body")
 )
 
 // ConnErrors is a map of the errors codes constants for Connect()
@@ -120,6 +121,22 @@ var ConnErrors = map[byte]error{
 	ErrRefusedNotAuthorised:         ErrorRefusedNotAuthorised,
 	ErrNetworkError:                 ErrorNetworkError,
 	ErrProtocolViolation:            ErrorProtocolViolation,
+}
+
+// fixedBodyLength maps the packet types whose MQTT 3.1.1 body length is fixed by
+// the specification to that length. A larger RemainingLength cannot describe a valid
+// packet of that type, so it is rejected before the body is allocated; a smaller one
+// is left to the field decoders, which report the truncated read.
+var fixedBodyLength = map[byte]int{
+	Connack:    2,
+	Puback:     2,
+	Pubrec:     2,
+	Pubrel:     2,
+	Pubcomp:    2,
+	Unsuback:   2,
+	Pingreq:    0,
+	Pingresp:   0,
+	Disconnect: 0,
 }
 
 // ReadPacket takes an instance of an io.Reader (such as net.Conn) and attempts
@@ -149,6 +166,10 @@ func ReadPacketWithLimit(r io.Reader, maxPacketSize uint32) (ControlPacket, erro
 	if maxPacketSize > 0 && uint32(fh.RemainingLength) > maxPacketSize {
 		return nil, fmt.Errorf("%w: remaining length %d exceeds limit %d", ErrPacketTooLarge, fh.RemainingLength, maxPacketSize)
 	}
+	if want, ok := fixedBodyLength[fh.MessageType]; ok && fh.RemainingLength > want {
+		return nil, fmt.Errorf("%w: %s declares Remaining Length %d, expected %d",
+			ErrUnexpectedBodyData, PacketNames[fh.MessageType], fh.RemainingLength, want)
+	}
 
 	cp, err := NewControlPacketWithHeader(fh)
 	if err != nil {
@@ -164,8 +185,24 @@ func ReadPacketWithLimit(r io.Reader, maxPacketSize uint32) (ControlPacket, erro
 		return nil, errors.New("failed to read expected data")
 	}
 
-	err = cp.Unpack(bytes.NewBuffer(packetBytes))
-	return cp, err
+	body := bytes.NewBuffer(packetBytes)
+	if err = cp.Unpack(body); err != nil {
+		return nil, err
+	}
+	// MQTT 3.1.1 fixes the length of several packet bodies, so bytes left after the
+	// packet's fields mean the Remaining Length (section 2.2.3) does not match the
+	// packet type. Checking the buffer here (Unpack must always consume the whole
+	// body) avoids probing the reader inside every packet and never consumes from
+	// a caller's stream.
+	if body.Len() != 0 {
+		return nil, fmt.Errorf(
+			"%w: %s has %d unread body bytes",
+			ErrUnexpectedBodyData,
+			PacketNames[fh.MessageType],
+			body.Len(),
+		)
+	}
+	return cp, nil
 }
 
 // NewControlPacket is used to create a new ControlPacket of the type specified
