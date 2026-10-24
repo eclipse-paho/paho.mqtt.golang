@@ -184,6 +184,7 @@ func startIncomingComms(conn io.Reader,
 
 			var msg packets.ControlPacket
 			var ok bool
+			resendPubrec := false
 			select {
 			case msg, ok = <-inboundFromStore:
 				if !ok {
@@ -206,6 +207,14 @@ func startIncomingComms(conn io.Reader,
 				}
 				msg = ibMsg.cp
 
+				// MQTT 3.1.1 section 4.3.3: a QoS 2 PUBLISH resent with DUP set and
+				// the same packet identifier must not be delivered again. Match the
+				// v5 client: resend PUBREC and skip the application handler. A
+				// resend without DUP is still delivered, because that looks like a
+				// session mismatch rather than a retransmission.
+				if pub, isPub := msg.(*packets.PublishPacket); isPub && pub.Qos == 2 && pub.Dup && c.qos2PublishInProgress(pub.MessageID) {
+					resendPubrec = true
+				}
 				c.persistInbound(msg)
 				c.UpdateLastReceived() // Notify keepalive logic that we recently received a packet
 			}
@@ -240,6 +249,12 @@ func startIncomingComms(conn io.Reader,
 				c.freeID(m.MessageID)
 			case *packets.PublishPacket:
 				logger.Debug("startIncomingComms: received publish", slog.Uint64("messageID", uint64(m.MessageID)), slog.String("component", string(NET)))
+				if resendPubrec {
+					pr := packets.NewControlPacket(packets.Pubrec).(*packets.PubrecPacket)
+					pr.MessageID = m.MessageID
+					output <- incomingComms{outbound: &PacketAndToken{p: pr, t: nil}}
+					continue
+				}
 				output <- incomingComms{incomingPub: m}
 			case *packets.PubackPacket:
 				logger.Debug("startIncomingComms: received puback", slog.Uint64("messageID", uint64(m.MessageID)), slog.String("component", string(NET)))
@@ -385,6 +400,7 @@ type commsFns interface {
 	getMaxIncomingPacketSize() uint32        // Return the maximum accepted MQTT Remaining Length (or 0 if none)
 	persistOutbound(m packets.ControlPacket) // add the packet to the outbound store
 	persistInbound(m packets.ControlPacket)  // add the packet to the inbound store
+	qos2PublishInProgress(id uint16) bool    // inbound QoS 2 PUBLISH with this id is stored, waiting for PUBREL
 	pingRespReceived()                       // Called when a ping response is received
 }
 
