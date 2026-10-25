@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 // ControlPacket defines the interface for structs intended to hold
@@ -364,9 +365,42 @@ func encodeString(field string) []byte {
 	return encodeBytes([]byte(field))
 }
 
+// validateString checks that field is a valid MQTT UTF-8 string as defined by
+// section 1.5.4 of the MQTT 3.1.1 spec: it must be well-formed UTF-8 and must
+// not include the null character U+0000 [MQTT-1.5.4-1, MQTT-1.5.4-2]. Non
+// characters (which the spec only recommends against) and U+FEFF (which a
+// parser must preserve, [MQTT-1.5.4-3]) are accepted.
+func validateString(field string) error {
+	if !utf8.ValidString(field) {
+		return fmt.Errorf("invalid UTF-8 string %q", field)
+	}
+	for i := 0; i < len(field); i++ {
+		if field[i] == 0 {
+			return fmt.Errorf("invalid MQTT string %q: must not include the null character U+0000", field)
+		}
+	}
+	return nil
+}
+
+// encodeStringChecked encodes field, failing if it is not a valid MQTT UTF-8
+// string rather than writing a malformed packet.
+func encodeStringChecked(field string) ([]byte, error) {
+	if err := validateString(field); err != nil {
+		return nil, err
+	}
+	return encodeString(field), nil
+}
+
 func decodeString(b io.Reader) (string, error) {
 	buf, err := decodeBytes(b)
-	return string(buf), err
+	if err != nil {
+		return "", err
+	}
+	field := string(buf)
+	if err := validateString(field); err != nil {
+		return "", err
+	}
+	return field, nil
 }
 
 func decodeBytes(b io.Reader) ([]byte, error) {

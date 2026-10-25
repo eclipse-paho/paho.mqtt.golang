@@ -41,6 +41,11 @@ func (u *UnsubscribePacket) String() string {
 func (u *UnsubscribePacket) Write(w io.Writer) error {
 	var body bytes.Buffer
 	var err error
+	for _, topic := range u.Topics {
+		if err := validateString(topic); err != nil {
+			return err
+		}
+	}
 	body.Write(encodeUint16(u.MessageID))
 	for _, topic := range u.Topics {
 		body.Write(encodeString(topic))

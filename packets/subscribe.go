@@ -39,6 +39,12 @@ func (s *SubscribePacket) Write(w io.Writer) error {
 	var body bytes.Buffer
 	var err error
 
+	for _, topic := range s.Topics {
+		if err := validateString(topic); err != nil {
+			return err
+		}
+	}
+
 	body.Write(encodeUint16(s.MessageID))
 	for i, topic := range s.Topics {
 		body.Write(encodeString(topic))

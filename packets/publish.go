@@ -39,6 +39,10 @@ func (p *PublishPacket) Write(w io.Writer) error {
 	var body bytes.Buffer
 	var err error
 
+	if err := validateString(p.TopicName); err != nil {
+		return err
+	}
+
 	body.Write(encodeString(p.TopicName))
 	if p.Qos > 0 {
 		body.Write(encodeUint16(p.MessageID))
