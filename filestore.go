@@ -26,6 +26,7 @@ import (
 	"path"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
@@ -50,6 +51,9 @@ type FileStore struct {
 	directory string
 	opened    bool
 	logger    *slog.Logger
+	// lastStamp is the modification time handed to the most recently stored message. write()
+	// updates it while the caller holds the store's write lock, so it needs no extra guard.
+	lastStamp time.Time
 }
 
 // NewFileStore will create a new FileStore which stores its messages in the
@@ -103,6 +107,10 @@ func (store *FileStore) Open() {
 	// unusable. See https://github.com/eclipse-paho/paho.mqtt.golang/issues/720.
 	verifyReadWrite(store.directory)
 
+	// Ordering relies on timestamps that must not go backwards, so a store resumed from files that
+	// are still ahead of the wall clock continues from the latest of them rather than from now.
+	store.lastStamp = newestModTime(store.directory)
+
 	store.opened = true
 	store.logger.Debug("store is opened", slog.String("directory", store.directory), slog.String("component", string(STR)))
 }
@@ -125,7 +133,7 @@ func (store *FileStore) Put(key string, m packets.ControlPacket) {
 		return
 	}
 	full := fullpath(store.directory, key)
-	write(store.directory, key, m)
+	store.write(key, m)
 	if !exists(full) {
 		store.logger.Error("file not created", slog.String("path", full), slog.String("component", string(STR)))
 	}
@@ -217,7 +225,9 @@ func (store *FileStore) all() []string {
 		chkerr(err)
 		files = append(files, info)
 	}
-	sort.Sort(files)
+	// Stable, so that messages sharing a timestamp keep the name order os.ReadDir returns instead
+	// of whatever order the unstable sort happened to settle on.
+	sort.Stable(files)
 	for _, f := range files {
 		store.logger.Debug("file in All()", slog.String("name", f.Name()), slog.String("component", string(STR)))
 		name := f.Name()
@@ -273,16 +283,69 @@ func corruptpath(store string, key string) string {
 // rename it to "X.[messageid].msg", overwriting any existing
 // message with the same id
 // X will be 'i' for inbound messages, and O for outbound messages
-func write(store, key string, m packets.ControlPacket) {
-	temppath := tmppath(store, key)
+//
+// lockless: Put() holds the store's write lock, which is what makes nextModTime() safe to use.
+func (store *FileStore) write(key string, m packets.ControlPacket) {
+	temppath := tmppath(store.directory, key)
 	f, err := os.Create(temppath)
 	chkerr(err)
 	werr := m.Write(f)
 	chkerr(werr)
 	cerr := f.Close()
 	chkerr(cerr)
-	rerr := os.Rename(temppath, fullpath(store, key))
+	// Rename leaves the modification time untouched, so stamping the temporary file before it
+	// moves is what fixes the position this message sorts to.
+	modTime := store.nextModTime()
+	if terr := os.Chtimes(temppath, time.Time{}, modTime); terr != nil {
+		// A message that cannot be stamped is still a message that has been persisted: warn and
+		// continue rather than discarding it. Ordering then falls back to the name order of any
+		// files that share a timestamp.
+		store.logger.Warn("failed to timestamp stored message for resend ordering",
+			slog.String("path", temppath), slog.String("error", terr.Error()), slog.String("component", string(STR)))
+	}
+	rerr := os.Rename(temppath, fullpath(store.directory, key))
 	chkerr(rerr)
+}
+
+// nextModTime returns the modification time to give the next message this store writes.
+// Filesystem timestamps are not reliable enough to order messages by: Linux can serve a "coarse"
+// current time and some formats record only whole seconds, so files written in quick succession
+// share a timestamp and the order all() reports - hence the order queued QoS 1 and 2 messages are
+// resent in after a reconnect - is left to directory-read order
+// (https://github.com/eclipse-paho/paho.mqtt.golang/issues/799). Every value returned here is
+// strictly greater than the one before it, while a store that writes at ordinary network speed
+// simply uses the wall clock, so real timestamps are preserved in that case.
+func (store *FileStore) nextModTime() time.Time {
+	now := time.Now()
+	if !now.After(store.lastStamp) {
+		now = store.lastStamp.Add(time.Nanosecond)
+	}
+	store.lastStamp = now
+	return now
+}
+
+// newestModTime returns the latest modification time among the messages already persisted in
+// directory, or the zero time when there are none or the directory cannot be read.
+func newestModTime(directory string) time.Time {
+	var newest time.Time
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return newest
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if len(name) < len(msgExt) || name[len(name)-len(msgExt):] != msgExt {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newest) {
+			newest = info.ModTime()
+		}
+	}
+	return newest
 }
 
 // verifyReadWrite confirms that the store directory is usable by writing, reading back and then
@@ -325,5 +388,8 @@ func (f fileInfos) Swap(i, j int) {
 }
 
 func (f fileInfos) Less(i, j int) bool {
+	// write() stamps every message it stores with a timestamp later than the previous one, so ties
+	// should only arise for files written by an older release (or where stamping failed); all()
+	// sorts stably, leaving those in the name order os.ReadDir reported.
 	return f[i].ModTime().Before(f[j].ModTime())
 }
