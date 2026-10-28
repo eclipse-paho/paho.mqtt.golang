@@ -105,3 +105,75 @@ func TestPublishRoundTripPreservesMultibyteTopic(t *testing.T) {
 		t.Errorf("topic name did not survive the round trip: got %q, want %q", got.TopicName, topic)
 	}
 }
+
+func TestPacketValidateRejectsInvalidStringFields(t *testing.T) {
+	surrogate := string([]byte{0xED, 0xA0, 0x80})
+	valid := "valid/topic"
+	if err := (&PublishPacket{TopicName: valid}).Validate(); err != nil {
+		t.Errorf("PublishPacket.Validate(%q) returned unexpected error: %v", valid, err)
+	}
+	for _, bad := range []string{"bad\x00topic", surrogate} {
+		if err := (&PublishPacket{TopicName: bad}).Validate(); err == nil {
+			t.Errorf("PublishPacket.Validate(%q): want error, got nil", bad)
+		}
+		if err := (&SubscribePacket{Topics: []string{valid, bad}}).Validate(); err == nil {
+			t.Errorf("SubscribePacket.Validate with topic %q: want error, got nil", bad)
+		}
+		if err := (&UnsubscribePacket{Topics: []string{bad}}).Validate(); err == nil {
+			t.Errorf("UnsubscribePacket.Validate with topic %q: want error, got nil", bad)
+		}
+	}
+}
+
+// TestUnsubscribeUnpackRejectsInvalidTopics covers inbound UNSUBSCRIBE packets:
+// a broker-supplied topic filter must be a valid MQTT UTF-8 string, even though
+// it never passes through a Write path (issue #780).
+func TestUnsubscribeUnpackRejectsInvalidTopics(t *testing.T) {
+	cases := []struct {
+		name    string
+		filters [][]byte
+		wantErr bool
+	}{
+		{"valid ascii and multibyte", [][]byte{[]byte("a/b"), []byte("c/\xc3\xa9")}, false},
+		{"U+FEFF is preserved", [][]byte{[]byte("\xEF\xBB\xBF/topic")}, false},
+		{"null byte in topic", [][]byte{[]byte("bad\x00topic")}, true},
+		{"surrogate half", [][]byte{{0xED, 0xA0, 0x80}}, true},
+		{"overlong encoding", [][]byte{{0xC0, 0x80}}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			body := bytes.NewBuffer(nil)
+			body.Write(encodeUint16(1)) // message ID
+			for _, f := range c.filters {
+				body.Write(encodeBytes(f))
+			}
+			head, err := (&FixedHeader{MessageType: Unsubscribe, Qos: 1}).pack(body.Len())
+			if err != nil {
+				t.Fatalf("fixed header pack failed: %v", err)
+			}
+			head.Write(body.Bytes())
+			cp, err := ReadPacket(&head)
+			if c.wantErr {
+				if err == nil {
+					t.Errorf("ReadPacket with filter %q: want error, got %T", c.filters, cp)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ReadPacket returned unexpected error: %v", err)
+			}
+			got, ok := cp.(*UnsubscribePacket)
+			if !ok {
+				t.Fatalf("ReadPacket returned a %T, expected an *UnsubscribePacket", cp)
+			}
+			if len(got.Topics) != len(c.filters) {
+				t.Fatalf("decoded %d topics, want %d: %q", len(got.Topics), len(c.filters), got.Topics)
+			}
+			for i, f := range c.filters {
+				if got.Topics[i] != string(f) {
+					t.Errorf("topic %d did not survive the round trip: got %q, want %q", i, got.Topics[i], string(f))
+				}
+			}
+		})
+	}
+}

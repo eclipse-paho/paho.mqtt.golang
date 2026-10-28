@@ -38,13 +38,24 @@ func (u *UnsubscribePacket) String() string {
 	return fmt.Sprintf("%s MessageID: %d", u.FixedHeader, u.MessageID)
 }
 
-func (u *UnsubscribePacket) Write(w io.Writer) error {
-	var body bytes.Buffer
-	var err error
+// Validate checks that the packet fields hold valid MQTT UTF-8 strings as
+// defined by section 1.5.4 of the MQTT 3.1.1 spec. Call it before handing the
+// packet to anything that must not fail part-way through transmission, such as
+// a persistence store, where a failed write would replay the packet forever.
+func (u *UnsubscribePacket) Validate() error {
 	for _, topic := range u.Topics {
 		if err := validateString(topic); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (u *UnsubscribePacket) Write(w io.Writer) error {
+	var body bytes.Buffer
+	var err error
+	if err := u.Validate(); err != nil {
+		return err
 	}
 	body.Write(encodeUint16(u.MessageID))
 	for _, topic := range u.Topics {
@@ -99,6 +110,9 @@ func (u *UnsubscribePacket) Unpack(b io.Reader) error {
 			return err
 		}
 
+		if err := validateString(string(topic)); err != nil {
+			return err
+		}
 		u.Topics = append(u.Topics, string(topic))
 	}
 
