@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -175,5 +176,46 @@ func TestUnsubscribeUnpackRejectsInvalidTopics(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestValidateStringTruncationBoundary covers the interaction between
+// validateString and encodeBytes, which truncates fields to 65,535 bytes: a
+// multi-byte character split by that truncation would produce a packet that is
+// written successfully but fails to decode again.
+func TestValidateStringTruncationBoundary(t *testing.T) {
+	cases := []struct {
+		name    string
+		field   string
+		wantErr bool
+	}{
+		{"multibyte character ends exactly at 65535 bytes", strings.Repeat("a", 65533) + "\u00e9", false},
+		{"truncation splits a multibyte character", strings.Repeat("a", 65534) + "\u00e9", true},
+		{"truncated prefix stays valid ascii", strings.Repeat("a", 65535) + "\u00e9", false},
+		{"truncated prefix splits multibyte run", strings.Repeat("\u00e9", 32768), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := validateString(c.field)
+			if c.wantErr && err == nil {
+				t.Errorf("validateString(%d bytes): want error, got nil", len(c.field))
+			}
+			if !c.wantErr && err != nil {
+				t.Errorf("validateString(%d bytes): unexpected error: %v", len(c.field), err)
+			}
+		})
+	}
+	// Packet-level: a topic whose truncation would split a character must be
+	// rejected by Validate (and therefore by Write) rather than persisting a
+	// packet that cannot be decoded.
+	split := strings.Repeat("a", 65534) + "\u00e9"
+	if err := (&PublishPacket{TopicName: split}).Validate(); err == nil {
+		t.Error("PublishPacket.Validate with a topic split at the truncation boundary: want error, got nil")
+	}
+	// A string whose retained prefix remains valid still passes (truncation
+	// behaviour is preserved for it).
+	pass := strings.Repeat("a", 65535) + "\u00e9"
+	if err := (&PublishPacket{TopicName: pass}).Validate(); err != nil {
+		t.Errorf("PublishPacket.Validate with a valid 65535-byte ascii prefix: unexpected error: %v", err)
 	}
 }
