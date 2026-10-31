@@ -56,6 +56,23 @@ func (c *ConnectPacket) Write(w io.Writer) error {
 	var body bytes.Buffer
 	var err error
 
+	if err := validateString(c.ProtocolName); err != nil {
+		return err
+	}
+	if err := validateString(c.ClientIdentifier); err != nil {
+		return err
+	}
+	if c.WillFlag {
+		if err := validateString(c.WillTopic); err != nil {
+			return err
+		}
+	}
+	if c.UsernameFlag {
+		if err := validateString(c.Username); err != nil {
+			return err
+		}
+	}
+
 	body.Write(encodeString(c.ProtocolName))
 	body.WriteByte(c.ProtocolVersion)
 	body.WriteByte(boolToByte(c.CleanSession)<<1 | boolToByte(c.WillFlag)<<2 | c.WillQos<<3 | boolToByte(c.WillRetain)<<5 | boolToByte(c.PasswordFlag)<<6 | boolToByte(c.UsernameFlag)<<7)

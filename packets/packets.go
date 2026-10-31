@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 // ControlPacket defines the interface for structs intended to hold
@@ -364,9 +365,54 @@ func encodeString(field string) []byte {
 	return encodeBytes([]byte(field))
 }
 
+// validateString checks that field is a valid MQTT UTF-8 string as defined by
+// section 1.5.4 of the MQTT 3.1.1 spec: it must be well-formed UTF-8 and must
+// not include the null character U+0000 [MQTT-1.5.4-1, MQTT-1.5.4-2]. Non
+// characters (which the spec only recommends against) and U+FEFF (which a
+// parser must preserve, [MQTT-1.5.4-3]) are accepted.
+//
+// Error messages intentionally do not include the field contents: strings may
+// originate from the network, and echoing a peer-controlled value could
+// interact with error handling that matches on specific error text.
+func validateString(field string) error {
+	if !utf8.ValidString(field) {
+		return fmt.Errorf("invalid UTF-8 string (length %d)", len(field))
+	}
+	for i := 0; i < len(field); i++ {
+		if field[i] == 0 {
+			return fmt.Errorf("invalid MQTT string (length %d): must not include the null character U+0000", len(field))
+		}
+	}
+	// encodeBytes truncates fields to 65,535 bytes. If the truncation point
+	// falls inside a multi-byte character the packet is written successfully
+	// but cannot be decoded again (a persisted message would be archived as
+	// corrupt instead of replayed), so require the prefix that would be
+	// retained to still be a valid UTF-8 string.
+	if len(field) > 65535 && !utf8.ValidString(field[:65535]) {
+		return fmt.Errorf("invalid UTF-8 string (length %d): the first 65535 bytes retained after truncation are not valid UTF-8", len(field))
+	}
+	return nil
+}
+
+// encodeStringChecked encodes field, failing if it is not a valid MQTT UTF-8
+// string rather than writing a malformed packet.
+func encodeStringChecked(field string) ([]byte, error) {
+	if err := validateString(field); err != nil {
+		return nil, err
+	}
+	return encodeString(field), nil
+}
+
 func decodeString(b io.Reader) (string, error) {
 	buf, err := decodeBytes(b)
-	return string(buf), err
+	if err != nil {
+		return "", err
+	}
+	field := string(buf)
+	if err := validateString(field); err != nil {
+		return "", err
+	}
+	return field, nil
 }
 
 func decodeBytes(b io.Reader) ([]byte, error) {

@@ -35,9 +35,21 @@ func (p *PublishPacket) String() string {
 	return fmt.Sprintf("%s topicName: %s MessageID: %d payload: %s", p.FixedHeader, p.TopicName, p.MessageID, string(p.Payload))
 }
 
+// Validate checks packet fields against some requirements set in the MQTT spec.
+// Currently, it checks UTF-8 string fields.
+//
+// MessageID will not be checked because validation may run before the client allocates a packet identifier.
+func (p *PublishPacket) Validate() error {
+	return validateString(p.TopicName)
+}
+
 func (p *PublishPacket) Write(w io.Writer) error {
 	var body bytes.Buffer
 	var err error
+
+	if err := p.Validate(); err != nil {
+		return err
+	}
 
 	body.Write(encodeString(p.TopicName))
 	if p.Qos > 0 {

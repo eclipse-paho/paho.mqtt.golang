@@ -35,9 +35,26 @@ func (s *SubscribePacket) String() string {
 	return fmt.Sprintf("%s MessageID: %d topics: %s", s.FixedHeader, s.MessageID, s.Topics)
 }
 
+// Validate checks packet fields against some requirements set in the MQTT spec.
+// Currently, it checks UTF-8 string fields.
+//
+// MessageID will not be checked because validation may run before the client allocates a packet identifier.
+func (s *SubscribePacket) Validate() error {
+	for _, topic := range s.Topics {
+		if err := validateString(topic); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *SubscribePacket) Write(w io.Writer) error {
 	var body bytes.Buffer
 	var err error
+
+	if err := s.Validate(); err != nil {
+		return err
+	}
 
 	body.Write(encodeUint16(s.MessageID))
 	for i, topic := range s.Topics {
