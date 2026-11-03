@@ -366,10 +366,10 @@ func encodeString(field string) []byte {
 }
 
 // validateString checks that field is a valid MQTT UTF-8 string as defined by
-// section 1.5.4 of the MQTT 3.1.1 spec: it must be well-formed UTF-8 and must
-// not include the null character U+0000 [MQTT-1.5.4-1, MQTT-1.5.4-2]. Non
+// section 1.5.3 of the MQTT 3.1.1 spec: it must be well-formed UTF-8 and must
+// not include the null character U+0000 [MQTT-1.5.3-1, MQTT-1.5.3-2]. Non
 // characters (which the spec only recommends against) and U+FEFF (which a
-// parser must preserve, [MQTT-1.5.4-3]) are accepted.
+// parser must preserve, [MQTT-1.5.3-3]) are accepted.
 //
 // Error messages intentionally do not include the field contents: strings may
 // originate from the network, and echoing a peer-controlled value could
