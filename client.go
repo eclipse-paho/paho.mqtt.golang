@@ -845,6 +845,14 @@ func (c *client) Publish(topic string, qos byte, retained bool, payload interfac
 		return token
 	}
 
+	// Validate before the packet is persisted or its message ID allocated: an
+	// invalid packet must never reach the store, where a failed Write would
+	// either panic (FileStore) or replay indefinitely (MemoryStore).
+	if err := pub.Validate(); err != nil {
+		token.setError(err)
+		return token
+	}
+
 	if pub.Qos != 0 && pub.MessageID == 0 {
 		mID := c.getID(token)
 		if mID == 0 {
@@ -920,6 +928,15 @@ func (c *client) Subscribe(topic string, qos byte, callback MessageHandler) Toke
 	}
 	sub.Topics = append(sub.Topics, topic)
 	sub.Qoss = append(sub.Qoss, qos)
+
+	// Validate before a route is registered, the packet is persisted or its
+	// message ID allocated: an invalid packet must never reach the store, where
+	// a failed Write would either panic (FileStore) or replay indefinitely
+	// (MemoryStore).
+	if err := sub.Validate(); err != nil {
+		token.setError(err)
+		return token
+	}
 
 	if strings.HasPrefix(topic, "$share/") {
 		topic = strings.Join(strings.Split(topic, "/")[2:], "/")
@@ -999,6 +1016,14 @@ func (c *client) SubscribeMultiple(filters map[string]byte, callback MessageHand
 	}
 	sub := packets.NewControlPacket(packets.Subscribe).(*packets.SubscribePacket)
 	if sub.Topics, sub.Qoss, err = validateSubscribeMap(filters); err != nil {
+		token.setError(err)
+		return token
+	}
+	// Validate before a route is registered, the packet is persisted or its
+	// message ID allocated: an invalid packet must never reach the store, where
+	// a failed Write would either panic (FileStore) or replay indefinitely
+	// (MemoryStore).
+	if err := sub.Validate(); err != nil {
 		token.setError(err)
 		return token
 	}
@@ -1235,6 +1260,14 @@ func (c *client) Unsubscribe(topics ...string) Token {
 	unsub := packets.NewControlPacket(packets.Unsubscribe).(*packets.UnsubscribePacket)
 	unsub.Topics = make([]string, len(topics))
 	copy(unsub.Topics, topics)
+
+	// Validate before the packet is persisted or its message ID allocated: an
+	// invalid packet must never reach the store, where a failed Write would
+	// either panic (FileStore) or replay indefinitely (MemoryStore).
+	if err := unsub.Validate(); err != nil {
+		token.setError(err)
+		return token
+	}
 
 	if unsub.MessageID == 0 {
 		mID := c.getID(token)

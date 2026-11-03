@@ -25,14 +25,12 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
-const closedNetConnErrorText = "use of closed network connection" // error string for closed conn (https://golang.org/src/net/error_test.go)
 var ErrMalformedSuback = packets.ErrMalformedSuback
 
 // ConnectMQTT takes a connected net.Conn and performs the initial MQTT handshake. Parameters are:
@@ -136,7 +134,7 @@ func startIncoming(conn io.Reader, logger *slog.Logger, maxIncomingPacketSize ui
 				// We do not want to log the error if it is due to the network connection having been closed
 				// elsewhere (i.e. after sending DisconnectPacket). Detecting this situation is the subject of
 				// https://github.com/golang/go/issues/4373
-				if !strings.Contains(err.Error(), closedNetConnErrorText) {
+				if !errors.Is(err, net.ErrClosed) {
 					ibound <- inbound{err: err}
 				}
 				close(ibound)
@@ -314,7 +312,7 @@ func startOutgoingComms(conn net.Conn,
 					logger.Error("outgoing obound reporting error", slog.String("error", err.Error()), slog.String("component", string(NET)))
 					pub.t.setError(err)
 					// report error if it's not due to the connection being closed elsewhere
-					if !strings.Contains(err.Error(), closedNetConnErrorText) {
+					if !errors.Is(err, net.ErrClosed) {
 						errChan <- err
 					}
 					continue
