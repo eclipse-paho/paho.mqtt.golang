@@ -20,10 +20,12 @@ package mqtt
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
@@ -357,6 +359,126 @@ func Test_FileStore_All(t *testing.T) {
 
 	if keys[0] != "o.121" {
 		t.Fatalf("FileStore.All has wrong key")
+	}
+}
+
+// Test_FileStore_All_RapidWriteRead covers https://github.com/eclipse-paho/paho.mqtt.golang/issues/799.
+// all() ordered the stored keys by file ModTime alone, but a filesystem whose timestamp resolution is
+// coarse (Linux may use a "coarse" current time, and FAT only keeps whole seconds) stamps files written
+// in quick succession identically, leaving the order in which queued QoS 1/2 messages are resent after a
+// reconnect up to directory-read order rather than the order they were published in.
+func Test_FileStore_All_RapidWriteRead(t *testing.T) {
+	const messageCount = 100
+	const topic = "rapid/write/read"
+
+	storedir := t.TempDir()
+	f := NewFileStore(storedir)
+	f.Open()
+
+	expectedKeys := make([]string, 0, messageCount)
+	for i := 1; i <= messageCount; i++ {
+		mid := uint16(i)
+		key := outboundKeyFromMID(mid)
+		pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+		pm.Qos = 1
+		pm.TopicName = topic
+		pm.Payload = []byte(fmt.Sprintf("Message %d for testing", i))
+		pm.MessageID = mid
+		f.Put(key, pm)
+		expectedKeys = append(expectedKeys, key)
+	}
+	f.Close()
+
+	// Reopen the store so that every assertion below is backed by the files on disk.
+	f = NewFileStore(storedir)
+	f.Open()
+	defer f.Close()
+
+	keys := f.All()
+	if len(keys) != messageCount {
+		t.Fatalf("expected %d stored messages, got %d", messageCount, len(keys))
+	}
+	for i, key := range keys {
+		if key != expectedKeys[i] {
+			t.Fatalf("stored messages out of order at index %d: got key %q, want %q", i, key, expectedKeys[i])
+		}
+		if m := f.Get(key); m == nil {
+			t.Fatalf("message %q was not retrieved from the store", key)
+		}
+	}
+}
+
+// Test_FileStore_Put_MonotonicModTime states the property the ordering relies on directly: consecutive
+// writes to the same store must be distinguishable by their modification time, even when they happen
+// within the same tick of the system clock.
+func Test_FileStore_Put_MonotonicModTime(t *testing.T) {
+	storedir := t.TempDir()
+	f := NewFileStore(storedir)
+	f.Open()
+	defer f.Close()
+
+	var previous int64
+	for i := 1; i <= 20; i++ {
+		mid := uint16(i)
+		key := outboundKeyFromMID(mid)
+		pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+		pm.Qos = 1
+		pm.TopicName = "monotonic/write"
+		pm.Payload = []byte{byte(i)}
+		pm.MessageID = mid
+		f.Put(key, pm)
+
+		fi, serr := os.Stat(fullpath(storedir, key))
+		if serr != nil {
+			t.Fatalf("stat after Put(%q): %s", key, serr)
+		}
+		modTime := fi.ModTime().UnixNano()
+		if modTime <= previous {
+			t.Fatalf("write %d (%s) has ModTime %d, which does not follow the previous write's %d", i, key, modTime, previous)
+		}
+		previous = modTime
+	}
+}
+
+// Test_FileStore_All_ResumeOrdersWritesAfterStoredTimestampsAhead covers the reopen half of the same
+// issue. A burst makes the store hand out timestamps that run ahead of the wall clock, which is what
+// keeps the burst itself ordered; a store reopened before the clock catches up has to continue from
+// the newest timestamp already on disk, or its next message would sort ahead of everything the
+// previous run persisted. That starting point is arranged here by stamping one stored message ahead
+// of the clock, rather than writing the hundreds of thousands of messages a real burst needs.
+func Test_FileStore_All_ResumeOrdersWritesAfterStoredTimestampsAhead(t *testing.T) {
+	const topic = "rapid/resume"
+	put := func(f *FileStore, mid uint16) {
+		pm := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+		pm.Qos = 1
+		pm.TopicName = topic
+		pm.Payload = []byte(fmt.Sprintf("Message %d", mid))
+		pm.MessageID = mid
+		f.Put(outboundKeyFromMID(mid), pm)
+	}
+
+	storedir := t.TempDir()
+	f := NewFileStore(storedir)
+	f.Open()
+	put(f, 1)
+	ahead := time.Now().Add(time.Hour)
+	if cerr := os.Chtimes(fullpath(storedir, outboundKeyFromMID(1)), time.Time{}, ahead); cerr != nil {
+		t.Fatalf("failed to stamp the stored message ahead of the clock: %v", cerr)
+	}
+	f.Close()
+
+	// Reopen with the newest stored timestamp an hour ahead of time.Now().
+	f = NewFileStore(storedir)
+	f.Open()
+	defer f.Close()
+	put(f, 2)
+
+	keys := f.All()
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 stored messages, got %d (%v)", len(keys), keys)
+	}
+	if keys[0] != "o.1" || keys[1] != "o.2" {
+		t.Fatalf("a reopened store wrote messages behind those already on disk: got %v, want [o.1 o.2]", keys)
 	}
 }
 
