@@ -160,11 +160,13 @@ func NewClientOptions() *ClientOptions {
 		Dialer:                   &net.Dialer{Timeout: 30 * time.Second},
 		CustomOpenConnectionFn:   nil,
 		AutoAckDisabled:          false,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})),
+		Logger:                   newDefaultClientLogger(),
 	}
 	return o
+}
+
+func newDefaultClientLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
 // AddBroker adds a broker URI to the list of brokers to be used. The format should be
@@ -493,7 +495,8 @@ func (o *ClientOptions) SetAutoAckDisabled(autoAckDisabled bool) *ClientOptions 
 
 // SetLogger sets the logger instance used by the client.
 //
-// By default, no logger is configured.
+// By default, the client produces no log output unless a package-level logger
+// is configured. Passing nil restores this default for the per-client logger.
 func (o *ClientOptions) SetLogger(logger *slog.Logger) *ClientOptions {
 	o.Logger = logger
 	return o

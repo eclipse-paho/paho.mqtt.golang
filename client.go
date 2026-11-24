@@ -176,7 +176,10 @@ func NewClient(o *ClientOptions) Client {
 		c.options.ProtocolVersion = 4
 		c.options.protocolVersionExplicit = false
 	}
-	wrapper := NewLogWrapper(o.Logger.Handler())
+	if c.options.Logger == nil {
+		c.options.Logger = newDefaultClientLogger()
+	}
+	wrapper := NewLogWrapper(c.options.Logger.Handler())
 	c.logger = slog.New(wrapper)
 
 	c.persist = c.options.Store
