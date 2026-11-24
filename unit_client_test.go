@@ -20,6 +20,7 @@ package mqtt
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"testing"
@@ -56,6 +57,18 @@ func Test_NewClient_simple(t *testing.T) {
 
 	if c.options.Servers[0].Host != "10.10.0.1:1883" {
 		t.Fatalf("bad server host")
+	}
+}
+
+func Test_NewClient_nilLogger(t *testing.T) {
+	for _, opts := range []*ClientOptions{{ClientID: "foo"}, NewClientOptions().SetLogger(nil)} {
+		c := NewClient(opts).(*client)
+		if !c.logger.Enabled(t.Context(), slog.LevelDebug) {
+			t.Error("default logger must allow debug records through to the legacy logger")
+		}
+		if opts.Logger != nil {
+			t.Error("NewClient modified the caller's logger")
+		}
 	}
 }
 
